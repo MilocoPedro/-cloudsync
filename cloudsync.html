@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="CloudSync">
+<meta name="theme-color" content="#0082c9">
+<title>CloudSync — Nextcloud Client</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.x/dist/tabler-icons.min.css">
+<style>
+:root {
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f5f5f0;
+  --color-background-tertiary: #ebebeb;
+  --color-background-success: #eaf3de;
+  --color-background-danger: #fcebeb;
+  --color-background-warning: #faeeda;
+  --color-background-info: #e6f1fb;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #666;
+  --color-text-tertiary: #999;
+  --color-text-success: #3b6d11;
+  --color-text-danger: #a32d2d;
+  --color-text-warning: #854f0b;
+  --color-text-info: #185fa5;
+  --color-border-tertiary: rgba(0,0,0,0.12);
+  --color-border-secondary: rgba(0,0,0,0.22);
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background-primary: #1e1e1e;
+    --color-background-secondary: #2a2a2a;
+    --color-background-tertiary: #333;
+    --color-background-success: #173404;
+    --color-background-danger: #501313;
+    --color-background-warning: #412402;
+    --color-background-info: #042c53;
+    --color-text-primary: #f0f0f0;
+    --color-text-secondary: #aaa;
+    --color-text-tertiary: #666;
+    --color-text-success: #c0dd97;
+    --color-text-danger: #f09595;
+    --color-text-warning: #fac775;
+    --color-text-info: #85b7eb;
+    --color-border-tertiary: rgba(255,255,255,0.12);
+    --color-border-secondary: rgba(255,255,255,0.22);
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); background: var(--color-background-primary); }
+
+#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; background: var(--color-background-primary); position: relative; }
+
+/* TOPBAR */
+#topbar { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 52px; border-bottom: 0.5px solid var(--color-border-tertiary); background: var(--color-background-primary); flex-shrink: 0; padding-top: env(safe-area-inset-top); }
+.logo { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 16px; }
+.logo i { font-size: 22px; color: #0082c9; }
+.topbar-spacer { flex: 1; }
+.sync-badge { display: flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 10px; border-radius: 20px; cursor: pointer; border: 0.5px solid var(--color-border-tertiary); white-space: nowrap; }
+.sync-badge.synced { background: var(--color-background-success); color: var(--color-text-success); }
+.sync-badge.syncing { background: var(--color-background-info); color: var(--color-text-info); }
+.sync-badge.error { background: var(--color-background-danger); color: var(--color-text-danger); }
+.sync-badge.offline { background: var(--color-background-warning); color: var(--color-text-warning); }
+.icon-btn { background: none; border: none; cursor: pointer; color: var(--color-text-secondary); font-size: 20px; padding: 6px; border-radius: var(--border-radius-md); -webkit-tap-highlight-color: transparent; }
+
+/* MAIN */
+#main { display: flex; flex: 1; overflow: hidden; }
+
+/* SIDEBAR */
+#sidebar { width: 220px; border-right: 0.5px solid var(--color-border-tertiary); display: flex; flex-direction: column; flex-shrink: 0; background: var(--color-background-secondary); overflow-y: auto; transition: transform 0.25s; }
+@media (max-width: 600px) {
+  #sidebar { position: absolute; left: 0; top: 52px; bottom: 0; z-index: 40; transform: translateX(-100%); }
+  #sidebar.open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,0.15); }
+  #sidebar-backdrop { display: none; position: absolute; inset: 0; z-index: 39; background: rgba(0,0,0,0.3); }
+  #sidebar-backdrop.show { display: block; }
+}
+.section-label { font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); padding: 14px 16px 5px; text-transform: uppercase; letter-spacing: 0.05em; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; cursor: pointer; color: var(--color-text-secondary); font-size: 14px; -webkit-tap-highlight-color: transparent; }
+.nav-item:hover, .nav-item:active { background: var(--color-background-primary); color: var(--color-text-primary); }
+.nav-item.active { background: var(--color-background-primary); color: #0082c9; font-weight: 500; }
+.nav-item i { font-size: 18px; }
+.filter-section { padding: 10px 16px; border-top: 0.5px solid var(--color-border-tertiary); margin-top: 4px; }
+.filter-label { font-size: 11px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; font-weight: 600; }
+.filter-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 4px 10px; border-radius: 12px; cursor: pointer; margin: 2px 3px 2px 0; border: 0.5px solid var(--color-border-tertiary); background: var(--color-background-primary); color: var(--color-text-secondary); -webkit-tap-highlight-color: transparent; }
+.filter-chip.active { background: #0082c9; color: #fff; border-color: #0082c9; }
+.account-info { padding: 12px 16px; border-top: 0.5px solid var(--color-border-tertiary); margin-top: auto; display: none; }
+.account-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.account-avatar { width: 32px; height: 32px; border-radius: 50%; background: #0082c9; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.account-name { font-size: 13px; font-weight: 500; }
+.account-server { font-size: 11px; color: var(--color-text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+
+/* CONTENT */
+#content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+#breadcrumb { display: flex; align-items: center; gap: 4px; padding: 8px 14px; font-size: 12px; color: var(--color-text-secondary); border-bottom: 0.5px solid var(--color-border-tertiary); flex-shrink: 0; }
+#toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-bottom: 0.5px solid var(--color-border-tertiary); flex-shrink: 0; overflow-x: auto; }
+#toolbar button { display: flex; align-items: center; gap: 5px; font-size: 13px; padding: 7px 12px; border-radius: var(--border-radius-md); cursor: pointer; border: 0.5px solid var(--color-border-tertiary); background: var(--color-background-primary); color: var(--color-text-primary); white-space: nowrap; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
+#toolbar button.primary { background: #0082c9; color: #fff; border-color: #0082c9; }
+.tb-spacer { flex: 1; min-width: 8px; }
+.view-toggle { display: flex; border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); overflow: hidden; flex-shrink: 0; }
+.view-toggle button { border: none; border-radius: 0; padding: 7px 10px; }
+.view-toggle button.active { background: var(--color-background-secondary); }
+
+#file-area { flex: 1; overflow-y: auto; padding: 12px 14px; -webkit-overflow-scrolling: touch; }
+
+/* GRID */
+.file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+.file-card { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 12px 8px; cursor: pointer; background: var(--color-background-primary); text-align: center; position: relative; -webkit-tap-highlight-color: transparent; }
+.file-card:active { background: var(--color-background-secondary); }
+.file-icon { font-size: 32px; margin-bottom: 6px; display: block; }
+.file-name { font-size: 11px; word-break: break-word; line-height: 1.4; }
+.sync-dot { position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; border-radius: 50%; }
+.dot-synced { background: #52c41a; }
+.dot-pending { background: #faad14; }
+.dot-conflict { background: #ff4d4f; }
+.dot-new { background: #52c41a; }
+.dot-syncing { background: #1890ff; animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* LIST */
+.file-list { width: 100%; }
+.list-header { display: grid; grid-template-columns: 1fr 70px 70px; gap: 8px; padding: 6px 10px; font-size: 11px; color: var(--color-text-tertiary); border-bottom: 0.5px solid var(--color-border-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }
+.file-row { display: grid; grid-template-columns: 1fr 70px 70px; gap: 8px; padding: 9px 10px; font-size: 13px; cursor: pointer; border-radius: var(--border-radius-md); align-items: center; -webkit-tap-highlight-color: transparent; }
+.file-row:active { background: var(--color-background-secondary); }
+.name-cell { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.name-cell i { font-size: 20px; flex-shrink: 0; }
+.name-cell span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.muted { color: var(--color-text-secondary); font-size: 12px; }
+
+/* SYNC PANEL */
+#sync-panel { width: 250px; border-left: 0.5px solid var(--color-border-tertiary); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; background: var(--color-background-primary); transition: width 0.2s; }
+#sync-panel.hidden { width: 0; border-left: none; }
+@media (max-width: 700px) { #sync-panel { display: none; } }
+.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 0.5px solid var(--color-border-tertiary); white-space: nowrap; }
+.panel-header span { font-size: 13px; font-weight: 500; }
+#sync-log { flex: 1; overflow-y: auto; padding: 8px; }
+.log-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px; border-radius: var(--border-radius-md); margin-bottom: 4px; background: var(--color-background-secondary); }
+.log-item i { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.log-text { font-size: 11px; line-height: 1.5; }
+.log-sub { color: var(--color-text-secondary); font-size: 10px; }
+.log-item.success i { color: var(--color-text-success); }
+.log-item.info i { color: var(--color-text-info); }
+.log-item.warn i { color: var(--color-text-warning); }
+.log-item.err i { color: var(--color-text-danger); }
+
+/* OVERLAY / MODALS */
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 100; background: rgba(0,0,0,0.5); padding: 16px; }
+.modal { background: var(--color-background-primary); border-radius: var(--border-radius-lg); padding: 24px; border: 0.5px solid var(--color-border-tertiary); width: 100%; max-width: 380px; max-height: 90vh; overflow-y: auto; }
+.modal h2 { font-size: 17px; font-weight: 600; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; }
+.modal .subtitle { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 18px; line-height: 1.5; }
+.tab-bar { display: flex; border-bottom: 0.5px solid var(--color-border-tertiary); margin-bottom: 18px; }
+.tab { padding: 9px 14px; font-size: 13px; cursor: pointer; color: var(--color-text-secondary); border-bottom: 2px solid transparent; margin-bottom: -0.5px; display: flex; align-items: center; gap: 6px; -webkit-tap-highlight-color: transparent; }
+.tab.active { color: #0082c9; border-bottom-color: #0082c9; font-weight: 500; }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+.field-label { font-size: 12px; color: var(--color-text-secondary); display: block; margin-bottom: 5px; margin-top: 14px; font-weight: 500; }
+.field-label:first-child { margin-top: 0; }
+input[type=text], input[type=password], input[type=url] { width: 100%; padding: 10px 12px; border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); font-size: 14px; background: var(--color-background-secondary); color: var(--color-text-primary); font-family: var(--font-sans); }
+input:focus { outline: none; border-color: #0082c9; }
+.modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+.modal-actions button { flex: 1; padding: 11px; font-size: 14px; border-radius: var(--border-radius-md); cursor: pointer; font-weight: 500; -webkit-tap-highlight-color: transparent; }
+.btn-primary { background: #0082c9; color: #fff; border: none; }
+.btn-primary:active { background: #0068a5; }
+.btn-sec { background: var(--color-background-secondary); border: 0.5px solid var(--color-border-tertiary); color: var(--color-text-secondary); }
+
+/* QR */
+.qr-instruction { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 14px; line-height: 1.7; background: var(--color-background-secondary); padding: 12px; border-radius: var(--border-radius-md); }
+.qr-instruction b { color: var(--color-text-primary); font-weight: 500; }
+.qr-scanner-area { border: 1.5px dashed var(--color-border-secondary); border-radius: var(--border-radius-lg); overflow: hidden; position: relative; background: #111; height: 200px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+#qr-video { width: 100%; height: 100%; object-fit: cover; display: none; }
+#qr-canvas { display: none; }
+.qr-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+.qr-frame { width: 130px; height: 130px; border: 2px solid rgba(0,130,201,0.5); border-radius: 12px; position: relative; }
+.qr-corner { position: absolute; width: 20px; height: 20px; border-color: #0082c9; border-style: solid; }
+.qr-corner.tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-radius: 8px 0 0 0; }
+.qr-corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 8px 0 0; }
+.qr-corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-radius: 0 0 0 8px; }
+.qr-corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 8px 0; }
+.scan-line { position: absolute; width: 110px; height: 2px; background: linear-gradient(90deg, transparent, #0082c9, transparent); left: 50%; transform: translateX(-50%); animation: scanAnim 2s ease-in-out infinite; }
+@keyframes scanAnim { 0%,100%{top:12px} 50%{top:106px} }
+.qr-hint { color: #888; font-size: 12px; }
+.qr-status { font-size: 13px; padding: 10px 14px; border-radius: var(--border-radius-md); margin-bottom: 12px; display: none; line-height: 1.5; }
+.qr-status.show { display: block; }
+.qr-status.success { background: var(--color-background-success); color: var(--color-text-success); }
+.qr-status.error { background: var(--color-background-danger); color: var(--color-text-danger); }
+.qr-status.info { background: var(--color-background-info); color: var(--color-text-info); }
+.qr-btn-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.qr-btn-row button { flex: 1; font-size: 13px; padding: 9px; border-radius: var(--border-radius-md); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 500; -webkit-tap-highlight-color: transparent; }
+.paste-label { font-size: 11px; color: var(--color-text-tertiary); text-align: center; margin: 4px 0; }
+.manual-qr-input { width: 100%; font-size: 12px; padding: 10px; border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); font-family: var(--font-mono); background: var(--color-background-secondary); color: var(--color-text-primary); }
+
+/* PREVIEW */
+#preview-panel { position: absolute; inset: 0; background: var(--color-background-primary); z-index: 50; display: none; flex-direction: column; }
+#preview-panel.show { display: flex; }
+#preview-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 0.5px solid var(--color-border-tertiary); flex-shrink: 0; padding-top: max(10px, env(safe-area-inset-top)); }
+.preview-title { font-size: 14px; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#preview-body { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 16px; }
+#preview-body iframe { width: 100%; height: 100%; border: none; border-radius: var(--border-radius-md); }
+.no-preview { text-align: center; color: var(--color-text-secondary); }
+.no-preview i { font-size: 56px; display: block; margin-bottom: 14px; opacity: 0.6; }
+
+/* DROP ZONE */
+#drop-zone { position: absolute; inset: 0; background: rgba(0,130,201,0.08); border: 2px dashed #0082c9; display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 80; color: #0082c9; font-size: 15px; gap: 12px; }
+#drop-zone.active { display: flex; }
+#drop-zone i { font-size: 48px; }
+
+/* EMPTY STATE */
+.empty-state { text-align: center; padding: 60px 20px; color: var(--color-text-secondary); }
+.empty-state i { font-size: 56px; display: block; margin-bottom: 14px; opacity: 0.4; }
+.spin { animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Mobile menu button */
+#menu-btn { display: none; }
+@media (max-width: 600px) { #menu-btn { display: flex; } }
+
+/* Bottom safe area */
+#file-area { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <button class="icon-btn" id="menu-btn" onclick="toggleSidebar()" aria-label="Menú"><i class="ti ti-menu-2"></i></button>
+    <div class="logo"><i class="ti ti-cloud"></i> CloudSync</div>
+    <div class="topbar-spacer"></div>
+    <div class="sync-badge offline" id="sync-badge" onclick="toggleSyncPanel()">
+      <i class="ti ti-wifi-off" id="sync-icon"></i>
+      <span id="sync-label">Sin conexión</span>
+    </div>
+    <button class="icon-btn" onclick="showSetup()" title="Configuración"><i class="ti ti-settings"></i></button>
+  </div>
+
+  <div id="main">
+    <div id="sidebar-backdrop" onclick="closeSidebar()"></div>
+    <div id="sidebar">
+      <div class="section-label">Archivos</div>
+      <div class="nav-item active" onclick="setNav('all',this)"><i class="ti ti-files"></i> Todos</div>
+      <div class="nav-item" onclick="setNav('recent',this)"><i class="ti ti-clock"></i> Recientes</div>
+      <div class="nav-item" onclick="setNav('favorites',this)"><i class="ti ti-star"></i> Favoritos</div>
+      <div class="filter-section">
+        <div class="filter-label">Tipo de archivo</div>
+        <span class="filter-chip active" data-type="all" onclick="setFilter('all',this)">Todos</span>
+        <span class="filter-chip" data-type="pdf" onclick="setFilter('pdf',this)">PDF</span>
+        <span class="filter-chip" data-type="doc" onclick="setFilter('doc',this)">Docs</span>
+        <span class="filter-chip" data-type="img" onclick="setFilter('img',this)">Imágenes</span>
+        <span class="filter-chip" data-type="sheet" onclick="setFilter('sheet',this)">Hojas</span>
+      </div>
+      <div class="filter-section">
+        <div class="filter-label">Estado sync</div>
+        <span class="filter-chip" onclick="setFilter('pending',this,'sync')">⏳ Pendientes</span>
+        <span class="filter-chip" onclick="setFilter('conflict',this,'sync')">⚠ Conflictos</span>
+      </div>
+      <div class="account-info" id="account-info">
+        <div class="account-row" onclick="showSetup()">
+          <div class="account-avatar" id="account-avatar">?</div>
+          <div>
+            <div class="account-name" id="account-name">—</div>
+            <div class="account-server" id="account-server">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="content">
+      <div id="breadcrumb">
+        <i class="ti ti-home" style="font-size:13px"></i>
+        <span style="margin:0 4px;color:var(--color-text-tertiary)">/</span>
+        <span>Inicio</span>
+      </div>
+      <div id="toolbar">
+        <button class="primary" onclick="triggerUpload()"><i class="ti ti-upload"></i> Subir</button>
+        <button onclick="triggerNewFolder()"><i class="ti ti-folder-plus"></i> Carpeta</button>
+        <button onclick="triggerSync()"><i class="ti ti-refresh" id="refresh-icon"></i> Sync</button>
+        <div class="tb-spacer"></div>
+        <div class="view-toggle">
+          <button id="btn-grid" class="active" onclick="setView('grid')" title="Rejilla"><i class="ti ti-layout-grid"></i></button>
+          <button id="btn-list" onclick="setView('list')" title="Lista"><i class="ti ti-list"></i></button>
+        </div>
+      </div>
+      <div id="file-area"></div>
+    </div>
+
+    <div id="sync-panel" class="hidden">
+      <div class="panel-header">
+        <span><i class="ti ti-refresh"></i> Actividad</span>
+        <button class="icon-btn" onclick="toggleSyncPanel()"><i class="ti ti-x"></i></button>
+      </div>
+      <div id="sync-log"></div>
+    </div>
+  </div>
+
+  <div id="drop-zone"><i class="ti ti-cloud-upload"></i> Suelta los archivos aquí</div>
+
+  <div id="preview-panel">
+    <div id="preview-header">
+      <button class="icon-btn" onclick="closePreview()"><i class="ti ti-arrow-left"></i></button>
+      <span class="preview-title" id="preview-title"></span>
+      <button class="icon-btn" onclick="downloadCurrent()" title="Descargar"><i class="ti ti-download"></i></button>
+    </div>
+    <div id="preview-body"></div>
+  </div>
+
+  <div class="overlay" id="setup-overlay">
+    <div class="modal" id="setup-modal">
+      <h2><i class="ti ti-cloud" style="color:#0082c9"></i> Conectar a Nextcloud</h2>
+      <p class="subtitle">Vincula tu cuenta escaneando el QR del servidor o introduciendo los datos manualmente.</p>
+      <div class="tab-bar">
+        <div class="tab active" id="tab-qr" onclick="switchTab('qr')"><i class="ti ti-qrcode"></i> Escanear QR</div>
+        <div class="tab" id="tab-manual" onclick="switchTab('manual')"><i class="ti ti-keyboard"></i> Manual</div>
+      </div>
+
+      <div class="tab-pane active" id="pane-qr">
+        <div class="qr-instruction">
+          En tu servidor Nextcloud ve a<br>
+          <b>Configuración → Seguridad → Tokens de app</b>,<br>
+          crea un token y pulsa el icono 🔲 del QR.
+        </div>
+        <div class="qr-scanner-area" id="scanner-area">
+          <video id="qr-video" playsinline autoplay muted></video>
+          <canvas id="qr-canvas"></canvas>
+          <div class="qr-overlay" id="qr-overlay">
+            <div class="qr-frame">
+              <div class="qr-corner tl"></div>
+              <div class="qr-corner tr"></div>
+              <div class="qr-corner bl"></div>
+              <div class="qr-corner br"></div>
+              <div class="scan-line"></div>
+            </div>
+            <p class="qr-hint" id="qr-hint">Activa la cámara para escanear</p>
+          </div>
+        </div>
+        <div class="qr-status" id="qr-status"></div>
+        <div class="qr-btn-row">
+          <button class="btn-primary" onclick="startCamera()"><i class="ti ti-camera"></i> Activar cámara</button>
+          <button class="btn-sec" onclick="stopCamera()"><i class="ti ti-camera-off"></i> Parar</button>
+        </div>
+        <p class="paste-label">— o pega el texto del QR —</p>
+        <input class="manual-qr-input" id="qr-paste-input" placeholder="nc://login/server:https://…&user:…&password:…" oninput="parseQRText(this.value)">
+        <div class="modal-actions">
+          <button class="btn-sec" onclick="useDemoMode()">Modo demo</button>
+        </div>
+      </div>
+
+      <div class="tab-pane" id="pane-manual">
+        <label class="field-label">URL del servidor</label>
+        <input type="url" id="cfg-url" placeholder="https://mi-nextcloud.com">
+        <label class="field-label">Usuario</label>
+        <input type="text" id="cfg-user" placeholder="admin" autocomplete="username">
+        <label class="field-label">Contraseña / Token de app</label>
+        <input type="password" id="cfg-pass" placeholder="••••••••" autocomplete="current-password">
+        <label class="field-label">Ruta remota</label>
+        <input type="text" id="cfg-path" placeholder="/" value="/">
+        <div class="modal-actions">
+          <button class="btn-sec" onclick="useDemoMode()">Modo demo</button>
+          <button class="btn-primary" onclick="connectManual()">Conectar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="file-input" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.webp,.gif,.odt,.ods,.odp" style="display:none">
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script>
+const S={view:'grid',filter:'all',syncFilter:null,nav:'all',search:'',syncPanelOpen:false,connected:false,syncing:false,config:{url:'',user:'',pass:'',path:'/'},files:[],syncLog:[],cameraStream:null,scanInterval:null,previewFile:null};
+const DEMO=[
+  {id:1,name:'Propuesta_Q3_2025.pdf',type:'pdf',size:2400000,modified:'2025-06-10',sync:'synced',etag:'a1',path:'/',favorite:false},
+  {id:2,name:'Informe_Ventas.xlsx',type:'sheet',size:540000,modified:'2025-06-12',sync:'pending',etag:'a2',path:'/',favorite:false},
+  {id:3,name:'Contrato_Cliente.docx',type:'doc',size:180000,modified:'2025-06-08',sync:'synced',etag:'a3',path:'/',favorite:true},
+  {id:4,name:'Presentacion.pptx',type:'doc',size:7800000,modified:'2025-06-14',sync:'syncing',etag:'a4',path:'/',favorite:false},
+  {id:5,name:'foto_equipo.jpg',type:'img',size:3200000,modified:'2025-06-01',sync:'synced',etag:'a5',path:'/',favorite:false},
+  {id:6,name:'README.txt',type:'txt',size:4000,modified:'2025-05-28',sync:'conflict',etag:'a6',path:'/',favorite:false},
+  {id:7,name:'clientes.csv',type:'sheet',size:88000,modified:'2025-06-13',sync:'synced',etag:'a7',path:'/',favorite:false},
+  {id:8,name:'Presupuesto_2025.pdf',type:'pdf',size:1200000,modified:'2025-06-15',sync:'pending',etag:'a8',path:'/',favorite:true},
+];
+const ICONS={pdf:{i:'ti-file-type-pdf',c:'#e03a3a'},doc:{i:'ti-file-word',c:'#2b579a'},sheet:{i:'ti-file-spreadsheet',c:'#217346'},img:{i:'ti-photo',c:'#f59e0b'},txt:{i:'ti-file-text',c:'#6b7280'},folder:{i:'ti-folder',c:'#faad14'},default:{i:'ti-file',c:'#9ca3af'}};
+function ic(t){return ICONS[t]||ICONS.default;}
+function fmtSz(b){if(b<1024)return b+' B';if(b<1048576)return Math.round(b/1024)+' KB';return(b/1048576).toFixed(1)+' MB';}
+function fmtDt(d){return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'});}
+function sdot(s){return{synced:'dot-synced',syncing:'dot-syncing',pending:'dot-pending',conflict:'dot-conflict',new:'dot-new'}[s]||'dot-pending';}
+function filteredFiles(){let f=S.files;if(S.nav==='favorites')f=f.filter(x=>x.favorite);if(S.nav==='recent')f=[...f].sort((a,b)=>b.modified.localeCompare(a.modified)).slice(0,8);if(S.filter!=='all'&&!S.syncFilter)f=f.filter(x=>x.type===S.filter);if(S.syncFilter)f=f.filter(x=>x.sync===S.syncFilter);if(S.search)f=f.filter(x=>x.name.toLowerCase().includes(S.search.toLowerCase()));return f;}
+function renderFiles(){const area=document.getElementById('file-area');const files=filteredFiles();if(!files.length){area.innerHTML='<div class="empty-state"><i class="ti ti-folder-off"></i>No hay archivos</div>';return;}if(S.view==='grid'){area.innerHTML='<div class="file-grid">'+files.map(f=>{const g=ic(f.type);return'<div class="file-card" onclick="openFile('+f.id+')"><div class="sync-dot '+sdot(f.sync)+'"></div><i class="ti '+g.i+' file-icon" style="color:'+g.c+'"></i><div class="file-name">'+f.name+'</div></div>';}).join('')+'</div>';}else{area.innerHTML='<div class="file-list"><div class="list-header"><span>Nombre</span><span>Tamaño</span><span>Fecha</span></div>'+files.map(f=>{const g=ic(f.type);return'<div class="file-row" onclick="openFile('+f.id+')"><div class="name-cell"><i class="ti '+g.i+'" style="color:'+g.c+'"></i><span>'+f.name+'</span></div><span class="muted">'+fmtSz(f.size)+'</span><span class="muted">'+fmtDt(f.modified)+'</span></div>';}).join('')+'</div>';}}
+function setView(v){S.view=v;document.getElementById('btn-grid').classList.toggle('active',v==='grid');document.getElementById('btn-list').classList.toggle('active',v==='list');renderFiles();}
+function setNav(nav,el){S.nav=nav;S.syncFilter=null;document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));el.classList.add('active');closeSidebar();renderFiles();}
+function setFilter(val,el,kind){if(kind==='sync'){S.syncFilter=S.syncFilter===val?null:val;el.classList.toggle('active',S.syncFilter===val);}else{S.filter=val;S.syncFilter=null;document.querySelectorAll('.filter-chip[data-type]').forEach(x=>x.classList.remove('active'));el.classList.add('active');}renderFiles();}
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebar-backdrop').classList.toggle('show');}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-backdrop').classList.remove('show');}
+function openFile(id){const f=S.files.find(x=>x.id===id);if(!f)return;S.previewFile=f;document.getElementById('preview-title').textContent=f.name;const body=document.getElementById('preview-body');document.getElementById('preview-panel').classList.add('show');const g=ic(f.type);if(f.type==='img'&&f.dataUrl)body.innerHTML='<img style="max-width:100%;max-height:100%;border-radius:var(--border-radius-md)" src="'+f.dataUrl+'" alt="'+f.name+'">';else if(f.type==='pdf'&&f.dataUrl)body.innerHTML='<iframe src="'+f.dataUrl+'" title="'+f.name+'" style="width:100%;height:100%;border:none;border-radius:var(--border-radius-md)"></iframe>';else body.innerHTML='<div class="no-preview"><i class="ti '+g.i+'" style="color:'+g.c+'"></i><div style="font-size:14px;font-weight:500;margin-top:10px">'+f.name+'</div><div style="font-size:13px;margin-top:6px;color:var(--color-text-secondary)">'+fmtSz(f.size)+'</div></div>';}
+function closePreview(){document.getElementById('preview-panel').classList.remove('show');}
+function downloadCurrent(){const f=S.previewFile;if(f&&f.dataUrl){const a=document.createElement('a');a.href=f.dataUrl;a.download=f.name;a.click();}}
+function toggleSyncPanel(){S.syncPanelOpen=!S.syncPanelOpen;document.getElementById('sync-panel').classList.toggle('hidden',!S.syncPanelOpen);}
+function addLog(type,text,sub){const icon={success:'ti-circle-check',info:'ti-info-circle',warn:'ti-alert-triangle',err:'ti-x'}[type]||'ti-info-circle';S.syncLog.unshift({type,icon,text,sub,time:new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})});renderLog();}
+function renderLog(){document.getElementById('sync-log').innerHTML=S.syncLog.slice(0,30).map(l=>'<div class="log-item '+l.type+'"><i class="ti '+l.icon+'"></i><div class="log-text">'+l.text+'<div class="log-sub">'+(l.sub||'')+' '+l.time+'</div></div></div>').join('');}
+function updateSyncBadge(state){const badge=document.getElementById('sync-badge');const icon=document.getElementById('sync-icon');const label=document.getElementById('sync-label');const map={synced:{i:'ti-circle-check',t:'Sincronizado',c:'synced'},syncing:{i:'ti-refresh spin',t:'Sincronizando…',c:'syncing'},error:{i:'ti-alert-triangle',t:'Error',c:'error'},offline:{i:'ti-wifi-off',t:'Sin conexión',c:'offline'}};const m=map[state]||map.offline;badge.className='sync-badge '+m.c;icon.className='ti '+m.i;label.textContent=m.t;}
+function switchTab(tab){['qr','manual'].forEach(t=>{document.getElementById('tab-'+t).classList.toggle('active',t===tab);document.getElementById('pane-'+t).classList.toggle('active',t===tab);});if(tab!=='qr')stopCamera();}
+function setQRStatus(msg,type){const el=document.getElementById('qr-status');el.textContent=msg;el.className='qr-status show '+type;}
+async function startCamera(){try{const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}});S.cameraStream=stream;const video=document.getElementById('qr-video');video.srcObject=stream;video.style.display='block';document.getElementById('qr-overlay').style.display='none';setQRStatus('Cámara activa — apunta al QR de Nextcloud','info');S.scanInterval=setInterval(scanFrame,250);}catch(e){setQRStatus('No se pudo acceder a la cámara: '+e.message,'error');}}
+function stopCamera(){if(S.cameraStream){S.cameraStream.getTracks().forEach(t=>t.stop());S.cameraStream=null;}clearInterval(S.scanInterval);S.scanInterval=null;const video=document.getElementById('qr-video');video.style.display='none';video.srcObject=null;document.getElementById('qr-overlay').style.display='flex';}
+function scanFrame(){const video=document.getElementById('qr-video');if(video.readyState!==video.HAVE_ENOUGH_DATA)return;const canvas=document.getElementById('qr-canvas');const ctx=canvas.getContext('2d');canvas.width=video.videoWidth;canvas.height=video.videoHeight;ctx.drawImage(video,0,0,canvas.width,canvas.height);const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);let code=null;try{if(typeof jsQR!=='undefined')code=jsQR(imageData.data,imageData.width,imageData.height,{inversionAttempts:'dontInvert'});}catch(e){}if(code&&code.data){stopCamera();parseQRText(code.data);}}
+function parseQRText(text){text=text.trim();if(!text)return;const ncMatch=text.match(/^nc:\/\/login\/server:(.+?)&user:(.+?)&password:(.+)$/i);if(ncMatch){const server=decodeURIComponent(ncMatch[1].replace(/\+/g,' '));const user=decodeURIComponent(ncMatch[2].replace(/\+/g,' '));const pass=decodeURIComponent(ncMatch[3].replace(/\+/g,' '));setQRStatus('✓ QR de Nextcloud detectado — conectando…','success');addLog('success','QR escaneado','Vinculando con '+server);applyConfig(server,user,pass,'/');return;}if(text.startsWith('nc://login/')){try{const body=text.replace('nc://login/','');const parts={};body.split('&').forEach(p=>{const sep=p.indexOf(':');if(sep>-1){parts[p.slice(0,sep)]=p.slice(sep+1);}});if(parts.server&&parts.user&&parts.password){setQRStatus('✓ QR reconocido — conectando…','success');applyConfig(parts.server,parts.user,parts.password,'/');return;}}catch(e){}}if(text.startsWith('http')){document.getElementById('cfg-url').value=text;switchTab('manual');setQRStatus('URL detectada — completa usuario y contraseña en Manual','info');return;}setQRStatus('QR no reconocido como código Nextcloud','error');}
+function applyConfig(url,user,pass,path){S.config={url:url.replace(/\/$/,''),user,pass,path:path||'/'};document.getElementById('cfg-url').value=S.config.url;document.getElementById('cfg-user').value=user;document.getElementById('cfg-pass').value=pass;document.getElementById('cfg-path').value=path||'/';updateAccountUI(user,S.config.url);setTimeout(()=>{closeSetup();connectServer();},600);}
+function updateAccountUI(user,url){const ai=document.getElementById('account-info');ai.style.display='block';document.getElementById('account-avatar').textContent=user.slice(0,2).toUpperCase();document.getElementById('account-name').textContent=user;try{document.getElementById('account-server').textContent=new URL(url).hostname;}catch(e){document.getElementById('account-server').textContent=url;}}
+async function connectServer(){if(S.syncing)return;S.syncing=true;updateSyncBadge('syncing');addLog('info','Conectando al servidor WebDAV…',S.config.url);const{url,user,pass,path}=S.config;const webdavUrl=url+'/remote.php/dav/files/'+encodeURIComponent(user)+(path==='/'?'/':path);const auth=btoa(unescape(encodeURIComponent(user+':'+pass)));try{const res=await fetch(webdavUrl,{method:'PROPFIND',headers:{'Authorization':'Basic '+auth,'Depth':'1','Content-Type':'application/xml'},body:'<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:displayname/><d:getcontentlength/><d:getlastmodified/><d:getetag/><d:getcontenttype/></d:prop></d:propfind>'});if(!res.ok)throw new Error('HTTP '+res.status+' — comprueba CORS en tu servidor Nextcloud');const xml=await res.text();const parsed=parseWebDAV(xml,url,user,auth);S.files=detectChanges(S.files,parsed);S.connected=true;updateSyncBadge('synced');addLog('success',parsed.length+' archivos encontrados','Sync: '+new Date().toLocaleTimeString('es-ES'));renderFiles();}catch(e){updateSyncBadge('error');addLog('err','Error de conexión',e.message);S.connected=false;if(!S.files.length){S.files=DEMO.map(f=>({...f}));renderFiles();}}S.syncing=false;}
+function parseWebDAV(xml,serverUrl,user,auth){const doc=new DOMParser().parseFromString(xml,'text/xml');return[...doc.querySelectorAll('response')].slice(1).map((r,i)=>{const href=r.querySelector('href')?.textContent||'';const name=decodeURIComponent(href.split('/').filter(Boolean).pop()||'');if(!name)return null;const size=parseInt(r.querySelector('getcontentlength')?.textContent||'0');const modified=r.querySelector('getlastmodified')?.textContent||'';const etag=(r.querySelector('getetag')?.textContent||'').replace(/"/g,'');const ct=r.querySelector('getcontenttype')?.textContent||'';return{id:Date.now()+i,name,type:detectType(name,ct),size,modified:modified?new Date(modified).toISOString().split('T')[0]:'',sync:'synced',etag,path:'/',webdavUrl:serverUrl+href,auth,favorite:false};}).filter(Boolean);}
+function detectType(name,ct){const ext=(name.split('.').pop()||'').toLowerCase();if(['pdf'].includes(ext)||ct.includes('pdf'))return'pdf';if(['doc','docx','odt'].includes(ext))return'doc';if(['xls','xlsx','ods','csv'].includes(ext))return'sheet';if(['ppt','pptx','odp'].includes(ext))return'doc';if(['jpg','jpeg','png','gif','webp','svg'].includes(ext)||ct.startsWith('image/'))return'img';if(['txt','md','log'].includes(ext))return'txt';return'doc';}
+function detectChanges(oldFiles,newFiles){const oldMap={};oldFiles.forEach(f=>{oldMap[f.name]=f;});const result=newFiles.map(f=>{const old=oldMap[f.name];if(!old){addLog('success','Nuevo: '+f.name,fmtSz(f.size));return{...f,sync:'new'};}if(old.etag&&f.etag&&old.etag!==f.etag){addLog('info','Actualizado: '+f.name,'');return{...f,sync:'synced'};}return{...f,sync:'synced'};});oldFiles.forEach(f=>{if(!newFiles.find(x=>x.name===f.name))addLog('warn','Eliminado del servidor: '+f.name,'');});return result;}
+function connectManual(){const url=document.getElementById('cfg-url').value.trim().replace(/\/$/,'');const user=document.getElementById('cfg-user').value.trim();const pass=document.getElementById('cfg-pass').value;const path=document.getElementById('cfg-path').value.trim()||'/';if(!url||!user||!pass){alert('Rellena URL, usuario y contraseña.');return;}applyConfig(url,user,pass,path);}
+function triggerSync(){if(S.connected){const ri=document.getElementById('refresh-icon');ri.classList.add('spin');connectServer().then(()=>ri.classList.remove('spin'));}else{addLog('warn','No conectado','Configura el servidor primero');showSetup();}}
+function triggerUpload(){document.getElementById('file-input').click();}
+document.getElementById('file-input').addEventListener('change',e=>{handleFiles([...e.target.files]);e.target.value='';});
+function handleFiles(files){files.forEach(file=>{const reader=new FileReader();reader.onload=ev=>{const type=detectType(file.name,file.type);const nf={id:Date.now()+Math.random(),name:file.name,type,size:file.size,modified:new Date().toISOString().split('T')[0],sync:S.connected?'syncing':'pending',etag:'',path:'/',dataUrl:ev.target.result,favorite:false};S.files.unshift(nf);addLog(S.connected?'info':'warn',(S.connected?'Subiendo: ':'En cola: ')+file.name,fmtSz(file.size));renderFiles();if(S.connected)setTimeout(()=>{const f=S.files.find(x=>x.id===nf.id);if(f){f.sync='synced';renderFiles();addLog('success','Subido: '+f.name,'');}},1800);};if(file.type.startsWith('image/')||file.type==='application/pdf')reader.readAsDataURL(file);else reader.readAsText(file);});}
+function triggerNewFolder(){const name=prompt('Nombre de la carpeta:');if(!name)return;S.files.unshift({id:Date.now(),name,type:'folder',size:0,modified:new Date().toISOString().split('T')[0],sync:'pending',etag:'',path:'/',favorite:false});addLog('info','Carpeta creada: '+name,'');renderFiles();}
+function showSetup(){document.getElementById('setup-overlay').style.display='flex';}
+function closeSetup(){document.getElementById('setup-overlay').style.display='none';}
+function useDemoMode(){closeSetup();stopCamera();S.files=DEMO.map(f=>({...f}));S.connected=false;updateSyncBadge('offline');addLog('info','Modo demo activo','8 archivos de ejemplo');renderFiles();}
+const appEl=document.getElementById('app');
+const dz=document.getElementById('drop-zone');
+appEl.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('active');});
+appEl.addEventListener('dragleave',e=>{if(!appEl.contains(e.relatedTarget))dz.classList.remove('active');});
+appEl.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('active');const f=[...(e.dataTransfer.files||[])];if(f.length)handleFiles(f);});
+renderFiles();renderLog();
+</script>
+</body>
+</html>
