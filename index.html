@@ -967,13 +967,28 @@ async function wdavMove(name,destPath){
   try{await fetch(wdavPath(name),{method:'MOVE',headers:{'Authorization':'Basic '+wdavAuth(),'Destination':dest}});addLog('success','Movido en servidor: '+name,'');}
   catch(e){addLog('err','Error moviendo',e.message);}
 }
+function wdavUploadXHR(url,file,onProgress){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('PUT',url,true);
+    xhr.setRequestHeader('Authorization','Basic '+wdavAuth());
+    xhr.setRequestHeader('Content-Type',file.type||'application/octet-stream');
+    xhr.upload.onprogress=e=>{ if(e.lengthComputable&&onProgress) onProgress(e.loaded,e.total); };
+    xhr.onload=()=>{ if(xhr.status>=200&&xhr.status<300) resolve(); else reject(new Error('HTTP '+xhr.status)); };
+    xhr.onerror=()=>reject(new Error('Error de red'));
+    xhr.send(file);
+  });
+}
+
 async function wdavUpload(file){
+  const url=wdavPath(file.name);
+  const taskId=addUploadTask(file.name,file.size);
   try{
-    const fd=await file.arrayBuffer();
-    await fetch(wdavPath(file.name),{method:'PUT',headers:{'Authorization':'Basic '+wdavAuth(),'Content-Type':file.type||'application/octet-stream'},body:fd});
+    await wdavUploadXHR(url,file,(loaded,total)=>updateUploadTask(taskId,loaded,total));
+    finishUploadTask(taskId,true);
     const par=getNode(S.path);if(par&&par.children&&par.children[file.name])par.children[file.name].sync='synced';
     renderFiles();addLog('success','Subido al servidor: '+file.name,fmtSz(file.size));
-  }catch(e){addLog('err','Error subiendo '+file.name,e.message);}
+  }catch(e){finishUploadTask(taskId,false);addLog('err','Error subiendo '+file.name,e.message);}
 }
 
 async function wdavMkdirAt(parentPath,name){
@@ -983,12 +998,83 @@ async function wdavMkdirAt(parentPath,name){
 }
 async function wdavUploadAt(parentPath,file){
   const url=wdavBase()+(parentPath==='/'?'/'+file.name:parentPath+'/'+file.name);
+  const taskId=addUploadTask(file.name,file.size);
   try{
-    const fd=await file.arrayBuffer();
-    await fetch(url,{method:'PUT',headers:{'Authorization':'Basic '+wdavAuth(),'Content-Type':file.type||'application/octet-stream'},body:fd});
+    await wdavUploadXHR(url,file,(loaded,total)=>updateUploadTask(taskId,loaded,total));
+    finishUploadTask(taskId,true);
     const par=getNode(parentPath);if(par&&par.children&&par.children[file.name])par.children[file.name].sync='synced';
     renderFiles();addLog('success','Subido al servidor: '+file.name,parentPath);
-  }catch(e){addLog('err','Error subiendo '+file.name,e.message);}
+  }catch(e){finishUploadTask(taskId,false);addLog('err','Error subiendo '+file.name,e.message);}
+}
+
+/* ===== UPLOAD PROGRESS PANEL ===== */
+S.uploadTasks=new Map();
+let uploadTaskSeq=0;
+
+function addUploadTask(name,size){
+  const id=++uploadTaskSeq;
+  S.uploadTasks.set(id,{name,size,loaded:0,status:'uploading',startTime:Date.now()});
+  renderUploadPanel();
+  return id;
+}
+function updateUploadTask(id,loaded,total){
+  const t=S.uploadTasks.get(id);
+  if(!t)return;
+  t.loaded=loaded; t.size=total||t.size;
+  renderUploadPanel();
+}
+function finishUploadTask(id,success){
+  const t=S.uploadTasks.get(id);
+  if(!t)return;
+  t.status=success?'done':'error';
+  t.loaded=t.size;
+  renderUploadPanel();
+  setTimeout(()=>{S.uploadTasks.delete(id);renderUploadPanel();},success?2500:5000);
+}
+function fmtSpeed(bytesPerSec){
+  if(bytesPerSec<1024)return Math.round(bytesPerSec)+' B/s';
+  if(bytesPerSec<1048576)return (bytesPerSec/1024).toFixed(1)+' KB/s';
+  return (bytesPerSec/1048576).toFixed(1)+' MB/s';
+}
+function renderUploadPanel(){
+  let panel=document.getElementById('upload-panel');
+  if(!panel){
+    panel=document.createElement('div');
+    panel.id='upload-panel';
+    panel.style.cssText='position:absolute;left:12px;bottom:12px;width:280px;max-width:calc(100% - 24px);background:var(--bg1);border:0.5px solid var(--bd2);border-radius:var(--rl);box-shadow:0 6px 24px rgba(0,0,0,.18);z-index:400;overflow:hidden;';
+    document.getElementById('app').appendChild(panel);
+  }
+  if(S.uploadTasks.size===0){panel.style.display='none';return;}
+  panel.style.display='block';
+  const tasks=[...S.uploadTasks.entries()];
+  const activeCount=tasks.filter(([,t])=>t.status==='uploading').length;
+  let html=`<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-bottom:0.5px solid var(--bd);font-size:12px;font-weight:500;">
+    <span><i class="ti ti-cloud-upload" style="color:#0082c9" aria-hidden="true"></i> ${activeCount>0?'Subiendo '+activeCount+' archivo'+(activeCount!==1?'s':''):'Completado'}</span>
+  </div><div style="max-height:220px;overflow-y:auto;">`;
+  tasks.forEach(([id,t])=>{
+    const pct=t.size>0?Math.min(100,Math.round((t.loaded/t.size)*100)):0;
+    const elapsed=(Date.now()-t.startTime)/1000;
+    const speed=elapsed>0?t.loaded/elapsed:0;
+    const icon=t.status==='done'?'ti-circle-check':t.status==='error'?'ti-alert-triangle':'ti-loader-2 spin';
+    const iconColor=t.status==='done'?'var(--txSu)':t.status==='error'?'var(--txDa)':'var(--txIn)';
+    const barColor=t.status==='error'?'#ff4d4f':t.status==='done'?'#52c41a':'#0082c9';
+    html+=`<div style="padding:8px 12px;border-bottom:0.5px solid var(--bd);">
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:5px;">
+        <i class="ti ${icon}" style="color:${iconColor};font-size:14px;flex-shrink:0" aria-hidden="true"></i>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${t.name}</span>
+        <span style="color:var(--txT);flex-shrink:0">${pct}%</span>
+      </div>
+      <div style="height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:${barColor};transition:width .2s;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--txT);margin-top:3px;">
+        <span>${fmtSz(t.loaded)} / ${fmtSz(t.size)}</span>
+        <span>${t.status==='uploading'?fmtSpeed(speed):(t.status==='done'?'Completado':'Error')}</span>
+      </div>
+    </div>`;
+  });
+  html+='</div>';
+  panel.innerHTML=html;
 }
 
 /* ===== QR / SETUP ===== */
