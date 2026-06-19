@@ -321,7 +321,10 @@ button,input{font-family:var(--font);}
   <!-- SETUP -->
   <div id="setup-ov">
     <div class="sbox">
-      <h2><i class="ti ti-cloud" style="color:#0082c9" aria-hidden="true"></i> Conectar a Nextcloud</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+        <h2 style="margin-bottom:0"><i class="ti ti-cloud" style="color:#0082c9" aria-hidden="true"></i> Conectar a Nextcloud</h2>
+        <button class="ibt" id="setup-close-btn" onclick="closeSetup()" title="Cerrar" style="display:none"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
       <p class="sub">Vincula tu cuenta escaneando el QR del servidor o introduciendo los datos manualmente.</p>
       <div class="tabs">
         <div class="tab active" id="tqr" onclick="switchTab('qr')"><i class="ti ti-qrcode" aria-hidden="true"></i> Escanear QR</div>
@@ -821,7 +824,11 @@ async function wdavUpload(file){
 }
 
 /* ===== QR / SETUP ===== */
-function showSetup(){document.getElementById('setup-ov').style.display='flex';}
+function showSetup(){
+  document.getElementById('setup-ov').style.display='flex';
+  // Mostrar botón cerrar si ya hay sesión guardada
+  if(S.config.url) document.getElementById('setup-close-btn').style.display='flex';
+}
 function closeSetup(){document.getElementById('setup-ov').style.display='none';}
 function switchTab(t){
   ['qr','manual'].forEach(x=>{document.getElementById('t'+x).classList.toggle('active',x===t);document.getElementById('p'+x).classList.toggle('active',x===t);});
@@ -870,8 +877,21 @@ function parseQR(text){
   if(text.startsWith('http')){document.getElementById('cfu').value=text;switchTab('manual');setQStat('URL detectada — completa usuario y contraseña en Manual','inf');return;}
   setQStat('QR no reconocido como código Nextcloud','err');
 }
+function saveConfig(){
+  try{localStorage.setItem('cs_cfg',JSON.stringify(S.config));}catch(e){}
+}
+function loadSavedConfig(){
+  try{
+    const raw=localStorage.getItem('cs_cfg');
+    if(!raw)return false;
+    const cfg=JSON.parse(raw);
+    if(cfg&&cfg.url&&cfg.user&&cfg.pass){S.config=cfg;return true;}
+  }catch(e){}
+  return false;
+}
 function applyConfig(url,user,pass,path){
   S.config={url:url.replace(/\/$/,''),user,pass,path:path||'/'};
+  saveConfig();
   document.getElementById('cfu').value=S.config.url;
   document.getElementById('cfn').value=user;
   document.getElementById('cfp').value=pass;
@@ -924,10 +944,27 @@ function loadDemo(){
   addLog('info','Modo demo activo','Datos de ejemplo cargados');
   addLog('warn','Sin conexión al servidor','Conecta tu Nextcloud para sincronizar');
 }
-function demoMode(){stopCam();closeSetup();S.connected=false;updateBadge('offline');loadDemo();renderTree();renderFiles();}
+function demoMode(){stopCam();closeSetup();S.connected=false;updateBadge('offline');loadDemo();renderTree();renderFiles();document.getElementById('setup-close-btn').style.display='flex';}
 
 /* ===== INIT ===== */
-renderTree();renderBreadcrumb();renderFiles();updateTB();
+(function(){
+  if(loadSavedConfig()){
+    // Credenciales guardadas — conectar directamente sin mostrar el modal
+    document.getElementById('setup-ov').style.display='none';
+    document.getElementById('cfu').value=S.config.url;
+    document.getElementById('cfn').value=S.config.user;
+    document.getElementById('cfp').value=S.config.pass;
+    document.getElementById('cfr').value=S.config.path||'/';
+    // Mostrar botón cerrar y datos de cuenta
+    document.getElementById('setup-close-btn').style.display='flex';
+    updateAccUI(S.config.user,S.config.url);
+    renderTree();renderBreadcrumb();renderFiles();updateTB();
+    wdavSync(S.config.path||'/');
+  } else {
+    // Sin credenciales guardadas — mostrar modal de conexión
+    renderTree();renderBreadcrumb();renderFiles();updateTB();
+  }
+})();
 </script>
 </body>
 </html>
