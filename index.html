@@ -221,6 +221,20 @@ button,input{font-family:var(--font);}
 
 /* Mobile menu btn hidden on desktop */
 #mbtn{display:none;}
+
+/* FILE BROWSER */
+.fb-item{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;border-bottom:0.5px solid var(--bd);-webkit-tap-highlight-color:transparent;}
+.fb-item:hover,.fb-item:active{background:var(--bg2);}
+.fb-item.fb-sel{background:var(--bgI);}
+.fb-item i{font-size:20px;flex-shrink:0;}
+.fb-item .fb-name{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fb-item .fb-size{font-size:11px;color:var(--txT);flex-shrink:0;}
+.fb-item .fb-chk{width:18px;height:18px;accent-color:#0082c9;flex-shrink:0;}
+.fb-empty{text-align:center;padding:40px 20px;color:var(--txS);}
+.fb-empty i{font-size:44px;display:block;margin-bottom:10px;opacity:.4;}
+.fb-hint{text-align:center;padding:32px 20px;color:var(--txS);line-height:1.7;}
+.fb-hint i{font-size:44px;display:block;margin-bottom:12px;color:#faad14;opacity:.7;}
+.fb-hint b{color:var(--txP);}
 </style>
 </head>
 <body>
@@ -249,7 +263,9 @@ button,input{font-family:var(--font);}
       <div id="breadcrumb"></div>
       <div id="toolbar">
         <button class="tbtn pr" onclick="triggerUpload()"><i class="ti ti-upload" aria-hidden="true"></i><span class="btnlbl"> Subir</span></button>
+        <button class="tbtn" onclick="triggerUploadFolder()" title="Subir carpeta desde el dispositivo"><i class="ti ti-folder-up" aria-hidden="true"></i><span class="btnlbl"> Subir carpeta</span></button>
         <button class="tbtn" onclick="newFolder()"><i class="ti ti-folder-plus" aria-hidden="true"></i><span class="btnlbl"> Carpeta</span></button>
+        <button class="tbtn" onclick="openFileBrowser()" title="Explorar archivos del dispositivo"><i class="ti ti-folder-open" aria-hidden="true"></i><span class="btnlbl"> Explorar</span></button>
         <div class="tdiv"></div>
         <button class="tbtn" id="bcopy" onclick="copySelected()" disabled title="Copiar"><i class="ti ti-copy" aria-hidden="true"></i><span class="btnlbl"> Copiar</span></button>
         <button class="tbtn" id="bcut" onclick="cutSelected()" disabled title="Cortar"><i class="ti ti-cut" aria-hidden="true"></i><span class="btnlbl"> Cortar</span></button>
@@ -328,6 +344,16 @@ button,input{font-family:var(--font);}
     </div>
   </div>
 
+  <!-- MODAL UPLOAD DESTINATION -->
+  <div class="mover" id="m-uploaddest">
+    <div class="mbox">
+      <h3><i class="ti ti-upload" aria-hidden="true"></i> ¿Dónde quieres guardarlos?</h3>
+      <p style="font-size:12px;color:var(--txS);margin-bottom:12px" id="uploaddest-count"></p>
+      <div class="mvlist" id="uploaddest-list"></div>
+      <div class="mbtns"><button class="mca" onclick="cancelUploadDest()">Cancelar</button><button class="mok" onclick="confirmUploadDest()">Subir aquí</button></div>
+    </div>
+  </div>
+
   <!-- SETUP -->
   <div id="setup-ov">
     <div class="sbox">
@@ -383,6 +409,36 @@ button,input{font-family:var(--font);}
   </div>
 
   <input type="file" id="fi" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.webp,.gif,.odt,.ods,.odp" style="display:none">
+  <input type="file" id="fidir" webkitdirectory directory multiple style="display:none">
+
+  <!-- FILE BROWSER MODAL -->
+  <div class="mover" id="m-filebrowser" style="z-index:800">
+    <div class="mbox" style="max-width:420px;max-height:88vh;display:flex;flex-direction:column;padding:0;overflow:hidden;">
+      <div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:0.5px solid var(--bd);flex-shrink:0;">
+        <i class="ti ti-folder-open" style="font-size:20px;color:#faad14" aria-hidden="true"></i>
+        <span style="font-weight:500;font-size:15px;flex:1">Explorador de archivos</span>
+        <button class="ibt" onclick="closeM('m-filebrowser')"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <!-- Breadcrumb del explorador -->
+      <div id="fb-breadcrumb" style="display:flex;align-items:center;gap:4px;padding:8px 16px;font-size:12px;color:var(--txS);border-bottom:0.5px solid var(--bd);flex-shrink:0;flex-wrap:wrap;min-height:36px;"></div>
+      <!-- Toolbar del explorador -->
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 16px;border-bottom:0.5px solid var(--bd);flex-shrink:0;">
+        <button class="tbtn" id="fb-back-btn" onclick="fbGoBack()" disabled style="padding:4px 8px"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+        <button class="tbtn pr" onclick="fbPickFolder()" style="padding:5px 12px"><i class="ti ti-folder" aria-hidden="true"></i><span class="btnlbl"> Abrir carpeta</span></button>
+        <div style="flex:1"></div>
+        <span id="fb-sel-count" style="font-size:12px;color:var(--txS)"></span>
+      </div>
+      <!-- File list -->
+      <div id="fb-list" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
+      <!-- Footer -->
+      <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:0.5px solid var(--bd);flex-shrink:0;">
+        <button class="tbtn" onclick="fbSelectAll()" style="font-size:12px"><i class="ti ti-checkbox" aria-hidden="true"></i> Selec. todo</button>
+        <div style="flex:1"></div>
+        <button class="mca mbtns" onclick="closeM('m-filebrowser')" style="padding:8px 14px;border-radius:var(--r);cursor:pointer;font-size:13px;border:0.5px solid var(--bd)">Cancelar</button>
+        <button class="mok" id="fb-upload-btn" onclick="fbUploadSelected()" disabled style="padding:8px 16px;border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:500">Subir seleccionados</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
@@ -648,17 +704,102 @@ function confirmFolder(){
 
 /* ===== UPLOAD ===== */
 function triggerUpload(){document.getElementById('fi').click();}
+function triggerUploadFolder(){document.getElementById('fidir').click();}
+
+document.getElementById('fidir').addEventListener('change',e=>{
+  const files=[...e.target.files];
+  if(!files.length)return;
+  let createdFolders=0,createdFiles=0;
+
+  files.forEach(f=>{
+    // webkitRelativePath ej: "MiCarpeta/Subcarpeta/archivo.pdf"
+    const relPath=f.webkitRelativePath||f.name;
+    const parts=relPath.split('/').filter(Boolean);
+    const fileName=parts.pop();
+
+    // Navegar/crear la cadena de carpetas dentro de S.fs a partir de S.path actual
+    let cur=getNode(S.path);
+    if(!cur||!cur.children)return;
+    let curPath=S.path;
+    parts.forEach(folderName=>{
+      if(!cur.children[folderName]){
+        cur.children[folderName]={type:'folder',name:folderName,children:{}};
+        createdFolders++;
+        if(S.connected)wdavMkdirAt(curPath,folderName);
+      }
+      cur=cur.children[folderName];
+      curPath=pjoin(curPath,folderName);
+    });
+
+    const ftype=detectType(fileName,f.type);
+    cur.children[fileName]={type:'file',ftype,size:f.size,modified:new Date().toISOString().split('T')[0],sync:S.connected?'syncing':'pending',name:fileName};
+    createdFiles++;
+    addLog('info','Subiendo: '+fileName,curPath);
+    if(S.connected)wdavUploadAt(curPath,f);
+    else{
+      const r=new FileReader();
+      const targetNode=cur.children[fileName];
+      r.onload=ev=>{targetNode.dataUrl=ev.target.result;};
+      if(f.type.startsWith('image/')||f.type==='application/pdf')r.readAsDataURL(f);else r.readAsText(f);
+    }
+  });
+
+  e.target.value='';
+  S.treeOpen.add(S.path);
+  renderTree();renderFiles();updateStatus();
+  flash('📁 Carpeta subida: '+createdFolders+' subcarpeta(s), '+createdFiles+' archivo(s)');
+});
 document.getElementById('fi').addEventListener('change',e=>{
-  const par=getNode(S.path);if(!par||!par.children)return;
-  [...e.target.files].forEach(f=>{
+  const files=[...e.target.files];
+  if(!files.length)return;
+  S.pendingUploadFiles=files;
+  e.target.value='';
+  showUploadDestPicker(files);
+});
+
+function showUploadDestPicker(files){
+  document.getElementById('uploaddest-count').textContent=files.length===1?`1 archivo: ${files[0].name}`:`${files.length} archivos seleccionados`;
+  const list=document.getElementById('uploaddest-list');
+  list.innerHTML='';
+  S.uploadDest=S.path; // por defecto, la carpeta actual
+  getAllFolders('/').forEach(({path,depth,name})=>{
+    const d=document.createElement('div');
+    d.className='mvi'+(path===S.path?' sel':'');
+    d.style.paddingLeft=(12+depth*14)+'px';
+    d.innerHTML=`<i class="ti ti-folder" aria-hidden="true"></i>${name==='/'?'Inicio':name}`;
+    d.onclick=()=>{
+      document.querySelectorAll('#uploaddest-list .mvi').forEach(x=>x.classList.remove('sel'));
+      d.classList.add('sel');
+      S.uploadDest=path;
+    };
+    list.appendChild(d);
+  });
+  openM('m-uploaddest');
+}
+
+function cancelUploadDest(){
+  S.pendingUploadFiles=null;
+  closeM('m-uploaddest');
+}
+
+function confirmUploadDest(){
+  const files=S.pendingUploadFiles;
+  const destPath=S.uploadDest||S.path;
+  if(!files||!files.length){closeM('m-uploaddest');return;}
+  const par=getNode(destPath);
+  if(!par||!par.children){closeM('m-uploaddest');return;}
+  files.forEach(f=>{
     const ftype=detectType(f.name,f.type);
     par.children[f.name]={type:'file',ftype,size:f.size,modified:new Date().toISOString().split('T')[0],sync:S.connected?'syncing':'pending',name:f.name};
-    addLog('info','Subiendo: '+f.name,fmtSz(f.size));
-    if(S.connected)wdavUpload(f);
+    addLog('info','Subiendo: '+f.name,destPath);
+    if(S.connected)wdavUploadAt(destPath,f);
     else{const r=new FileReader();r.onload=ev=>{par.children[f.name].dataUrl=ev.target.result;};if(f.type.startsWith('image/')||f.type==='application/pdf')r.readAsDataURL(f);else r.readAsText(f);}
   });
-  e.target.value='';renderFiles();updateStatus();
-});
+  S.pendingUploadFiles=null;
+  closeM('m-uploaddest');
+  if(destPath===S.path){renderFiles();}else{flash('⬆️ '+files.length+' archivo(s) subidos a '+(destPath==='/'?'Inicio':destPath));}
+  renderTree();updateStatus();
+}
 
 /* ===== PREVIEW ===== */
 function openPreview(name){
@@ -835,6 +976,21 @@ async function wdavUpload(file){
   }catch(e){addLog('err','Error subiendo '+file.name,e.message);}
 }
 
+async function wdavMkdirAt(parentPath,name){
+  const url=wdavBase()+(parentPath==='/'?'/'+name:parentPath+'/'+name);
+  try{await fetch(url,{method:'MKCOL',headers:{'Authorization':'Basic '+wdavAuth()}});addLog('success','Carpeta creada en servidor: '+name,parentPath);}
+  catch(e){addLog('err','Error creando carpeta '+name,e.message);}
+}
+async function wdavUploadAt(parentPath,file){
+  const url=wdavBase()+(parentPath==='/'?'/'+file.name:parentPath+'/'+file.name);
+  try{
+    const fd=await file.arrayBuffer();
+    await fetch(url,{method:'PUT',headers:{'Authorization':'Basic '+wdavAuth(),'Content-Type':file.type||'application/octet-stream'},body:fd});
+    const par=getNode(parentPath);if(par&&par.children&&par.children[file.name])par.children[file.name].sync='synced';
+    renderFiles();addLog('success','Subido al servidor: '+file.name,parentPath);
+  }catch(e){addLog('err','Error subiendo '+file.name,e.message);}
+}
+
 /* ===== QR / SETUP ===== */
 function showSetup(){
   document.getElementById('setup-ov').style.display='flex';
@@ -957,6 +1113,206 @@ function loadDemo(){
   addLog('warn','Sin conexión al servidor','Conecta tu Nextcloud para sincronizar');
 }
 function demoMode(){stopCam();closeSetup();S.connected=false;updateBadge('offline');loadDemo();renderTree();renderFiles();document.getElementById('setup-close-btn').style.display='flex';}
+
+/* ===== FILE BROWSER ===== */
+const FB = {
+  rootHandle: null,
+  currentHandle: null,
+  currentEntries: [],
+  history: [],
+  selected: new Set(),
+  apiSupported: typeof window !== 'undefined' && 'showDirectoryPicker' in window
+};
+
+async function openFileBrowser() {
+  openM('m-filebrowser');
+  FB.selected.clear();
+  FB.history = [];
+  FB.currentHandle = null;
+  FB.rootHandle = null;
+  updateFBSelCount();
+  document.getElementById('fb-back-btn').disabled = true;
+  // Show initial hint
+  const list = document.getElementById('fb-list');
+  if (FB.apiSupported) {
+    list.innerHTML = '<div class="fb-hint"><i class="ti ti-folder-open" aria-hidden="true"></i><div>Pulsa <b>Abrir carpeta</b> para explorar los archivos de tu dispositivo<br><br><span style="font-size:11px;color:var(--txT)">Navega hasta la carpeta que quieras,<br>selecciona los archivos y pulsa Subir</span></div></div>';
+  } else {
+    // Fallback: use standard file picker with directory support
+    list.innerHTML = '<div class="fb-hint"><i class="ti ti-info-circle" aria-hidden="true"></i><div>Tu navegador no soporta el explorador avanzado.<br><br>Usa el selector de archivos estándar:</div></div>';
+    setTimeout(() => {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.multiple = true;
+      inp.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.webp,.gif,.odt,.ods,.odp';
+      inp.onchange = e => {
+        if (e.target.files.length) {
+          closeM('m-filebrowser');
+          const par = getNode(S.path);
+          if (!par || !par.children) return;
+          [...e.target.files].forEach(f => {
+            const ftype = detectType(f.name, f.type);
+            par.children[f.name] = {type:'file',ftype,size:f.size,modified:new Date().toISOString().split('T')[0],sync:S.connected?'syncing':'pending',name:f.name};
+            addLog('info','Subiendo: '+f.name, fmtSz(f.size));
+            if (S.connected) wdavUpload(f);
+          });
+          renderFiles(); updateStatus();
+        }
+      };
+      inp.click();
+    }, 300);
+  }
+}
+
+async function fbPickFolder() {
+  if (!FB.apiSupported) return;
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'read' });
+    FB.rootHandle = handle;
+    FB.currentHandle = handle;
+    FB.history = [];
+    FB.selected.clear();
+    document.getElementById('fb-back-btn').disabled = true;
+    await fbLoadDir(handle);
+  } catch(e) {
+    if (e.name !== 'AbortError') {
+      addLog('err', 'Error accediendo a la carpeta', e.message);
+    }
+  }
+}
+
+async function fbLoadDir(handle) {
+  FB.currentHandle = handle;
+  FB.currentEntries = [];
+  FB.selected.clear();
+  updateFBSelCount();
+  const list = document.getElementById('fb-list');
+  list.innerHTML = '<div class="fb-empty"><i class="ti ti-loader spin" aria-hidden="true"></i><div>Cargando…</div></div>';
+
+  const folders = [];
+  const files = [];
+  try {
+    for await (const [name, entry] of handle.entries()) {
+      if (entry.kind === 'directory') folders.push({name, handle: entry, kind: 'dir'});
+      else {
+        let size = 0;
+        try { const f = await entry.getFile(); size = f.size; } catch(e) {}
+        files.push({name, handle: entry, kind: 'file', size});
+      }
+    }
+  } catch(e) {
+    list.innerHTML = `<div class="fb-empty"><i class="ti ti-alert-triangle" aria-hidden="true"></i><div>Sin permiso para leer esta carpeta</div></div>`;
+    return;
+  }
+
+  folders.sort((a,b) => a.name.localeCompare(b.name));
+  files.sort((a,b) => a.name.localeCompare(b.name));
+  FB.currentEntries = [...folders, ...files];
+
+  fbRenderList();
+  fbUpdateBreadcrumb();
+  document.getElementById('fb-back-btn').disabled = FB.history.length === 0;
+}
+
+function fbRenderList() {
+  const list = document.getElementById('fb-list');
+  if (!FB.currentEntries.length) {
+    list.innerHTML = '<div class="fb-empty"><i class="ti ti-folder-off" aria-hidden="true"></i><div>Carpeta vacía</div></div>';
+    return;
+  }
+  list.innerHTML = FB.currentEntries.map((entry, idx) => {
+    const isDir = entry.kind === 'dir';
+    const isSel = FB.selected.has(entry.name);
+    const iconCls = isDir ? 'ti-folder' : (IC[detectType(entry.name,'')] ? IC[detectType(entry.name,'')].i : 'ti-file');
+    const iconColor = isDir ? '#faad14' : (ic(detectType(entry.name,'')).c);
+    const sizeStr = isDir ? '' : fmtSz(entry.size);
+    const chkHtml = !isDir ? `<input type="checkbox" class="fb-chk" ${isSel?'checked':''} onclick="fbToggleSel(event,'${entry.name.replace(/'/g,"\'")}')">` : `<span style="width:18px"></span>`;
+    const arrowHtml = isDir ? `<i class="ti ti-chevron-right" style="color:var(--txT);font-size:14px" aria-hidden="true"></i>` : '';
+    return `<div class="fb-item${isSel?' fb-sel':''}" data-idx="${idx}" onclick="fbItemClick(event,${idx})">
+      ${chkHtml}
+      <i class="ti ${iconCls}" style="color:${iconColor};font-size:20px" aria-hidden="true"></i>
+      <span class="fb-name">${entry.name}</span>
+      <span class="fb-size">${sizeStr}</span>
+      ${arrowHtml}
+    </div>`;
+  }).join('');
+}
+
+function fbItemClick(e, idx) {
+  if (e.target.type === 'checkbox') return;
+  const entry = FB.currentEntries[idx];
+  if (!entry) return;
+  if (entry.kind === 'dir') {
+    FB.history.push(FB.currentHandle);
+    fbLoadDir(entry.handle);
+  } else {
+    fbToggleSel(e, entry.name);
+  }
+}
+
+function fbToggleSel(e, name) {
+  e.stopPropagation();
+  if (FB.selected.has(name)) FB.selected.delete(name);
+  else FB.selected.add(name);
+  updateFBSelCount();
+  fbRenderList();
+}
+
+function fbSelectAll() {
+  const files = FB.currentEntries.filter(e => e.kind === 'file');
+  if (FB.selected.size === files.length) FB.selected.clear();
+  else files.forEach(f => FB.selected.add(f.name));
+  updateFBSelCount();
+  fbRenderList();
+}
+
+async function fbGoBack() {
+  if (!FB.history.length) return;
+  const prev = FB.history.pop();
+  await fbLoadDir(prev);
+}
+
+function fbUpdateBreadcrumb() {
+  const bc = document.getElementById('fb-breadcrumb');
+  const parts = [];
+  if (FB.rootHandle) parts.push(FB.rootHandle.name);
+  // Build path from history
+  const pathParts = FB.history.map(h => h.name).filter(n => n !== FB.rootHandle?.name);
+  pathParts.forEach(p => parts.push(p));
+  if (FB.currentHandle && FB.currentHandle !== FB.rootHandle) parts.push(FB.currentHandle.name);
+  bc.innerHTML = parts.map((p,i) => `<span style="color:${i===parts.length-1?'var(--txP)':'var(--txS)'};font-size:12px">${p}</span>${i<parts.length-1?'<span style="color:var(--txT)"> / </span>':''}`).join('');
+}
+
+function updateFBSelCount() {
+  const count = FB.selected.size;
+  document.getElementById('fb-sel-count').textContent = count > 0 ? `${count} seleccionado${count!==1?'s':''}` : '';
+  document.getElementById('fb-upload-btn').disabled = count === 0;
+}
+
+async function fbUploadSelected() {
+  if (!FB.selected.size) return;
+  const par = getNode(S.path);
+  if (!par || !par.children) return;
+  const toUpload = FB.currentEntries.filter(e => FB.selected.has(e.name) && e.kind === 'file');
+  closeM('m-filebrowser');
+  for (const entry of toUpload) {
+    try {
+      const file = await entry.handle.getFile();
+      const ftype = detectType(file.name, file.type);
+      par.children[file.name] = {type:'file',ftype,size:file.size,modified:new Date().toISOString().split('T')[0],sync:S.connected?'syncing':'pending',name:file.name};
+      addLog('info', (S.connected?'Subiendo: ':'En cola: ') + file.name, fmtSz(file.size));
+      if (S.connected) await wdavUpload(file);
+      else {
+        const reader = new FileReader();
+        reader.onload = ev => { if(par.children[file.name]) par.children[file.name].dataUrl = ev.target.result; };
+        if (file.type.startsWith('image/') || file.type === 'application/pdf') reader.readAsDataURL(file);
+      }
+    } catch(e) {
+      addLog('err', 'Error con ' + entry.name, e.message);
+    }
+  }
+  renderFiles(); updateStatus();
+  flash('⬆️ ' + toUpload.length + ' archivo(s) enviado(s) a la cola');
+}
 
 /* ===== INIT ===== */
 (function(){
