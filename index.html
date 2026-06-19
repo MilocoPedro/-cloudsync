@@ -90,6 +90,8 @@ button,input{font-family:var(--font);}
 /* TOOLBAR */
 #toolbar{display:flex;align-items:center;gap:5px;padding:6px 12px;border-bottom:0.5px solid var(--bd);flex-shrink:0;overflow-x:auto;}
 .tbtn{display:flex;align-items:center;gap:4px;font-size:12px;padding:5px 10px;border-radius:var(--r);cursor:pointer;border:0.5px solid var(--bd);background:var(--bg1);color:var(--txP);white-space:nowrap;flex-shrink:0;-webkit-tap-highlight-color:transparent;}
+.tbtn .btnlbl{display:none;}
+@media(min-width:480px){.tbtn .btnlbl{display:inline;}}
 .tbtn:hover{background:var(--bg2);}
 .tbtn.pr{background:#0082c9;color:#fff;border-color:#0082c9;}
 .tbtn.pr:hover{background:#0068a5;}
@@ -100,16 +102,24 @@ button,input{font-family:var(--font);}
 
 /* FILE AREA */
 #file-area{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;}
-.lhdr{display:grid;grid-template-columns:24px 1fr 76px 88px 80px;gap:6px;padding:6px 12px;font-size:11px;color:var(--txT);border-bottom:0.5px solid var(--bd);text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;background:var(--bg1);z-index:2;}
-.frow{display:grid;grid-template-columns:24px 1fr 76px 88px 80px;gap:6px;padding:7px 12px;font-size:12px;cursor:pointer;align-items:center;border-bottom:0.5px solid var(--bd);}
+.lhdr{display:grid;grid-template-columns:24px 1fr 32px;gap:6px;padding:6px 12px;font-size:11px;color:var(--txT);border-bottom:0.5px solid var(--bd);text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;background:var(--bg1);z-index:2;}
+.lhdr .col-sz,.lhdr .col-dt{display:none;}
+.frow{display:grid;grid-template-columns:24px 1fr 32px;gap:6px;padding:9px 12px;font-size:13px;cursor:pointer;align-items:center;border-bottom:0.5px solid var(--bd);}
+.frow .col-sz,.frow .col-dt,.frow .col-st-txt{display:none;}
+@media(min-width:600px){
+  .lhdr{grid-template-columns:24px 1fr 76px 100px 80px;}
+  .lhdr .col-sz,.lhdr .col-dt{display:block;}
+  .frow{grid-template-columns:24px 1fr 76px 100px 80px;}
+  .frow .col-sz,.frow .col-dt,.frow .col-st-txt{display:block;}
+}
 .frow:hover{background:var(--bg2);}
 .frow.sel{background:var(--bgI);}
 .frow.cut{opacity:.4;}
 .frow.dragging-over{background:var(--bgS);border:1px dashed var(--txSu);}
 .chk input{cursor:pointer;width:14px;height:14px;accent-color:#0082c9;}
-.ncell{display:flex;align-items:center;gap:7px;min-width:0;}
-.ncell i{font-size:18px;flex-shrink:0;}
-.ncell span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ncell{display:flex;align-items:center;gap:8px;min-width:0;}
+.ncell i{font-size:20px;flex-shrink:0;}
+.ncell span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;}
 .sdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-left:2px;}
 .ds{background:#52c41a;}.dp{background:#faad14;}.dc{background:#ff4d4f;}.dn{background:#1890ff;}
 .muted{color:var(--txS);font-size:11px;}
@@ -238,16 +248,16 @@ button,input{font-family:var(--font);}
     <div id="main">
       <div id="breadcrumb"></div>
       <div id="toolbar">
-        <button class="tbtn pr" onclick="triggerUpload()"><i class="ti ti-upload" aria-hidden="true"></i> Subir</button>
-        <button class="tbtn" onclick="newFolder()"><i class="ti ti-folder-plus" aria-hidden="true"></i> Carpeta</button>
+        <button class="tbtn pr" onclick="triggerUpload()"><i class="ti ti-upload" aria-hidden="true"></i><span class="btnlbl"> Subir</span></button>
+        <button class="tbtn" onclick="newFolder()"><i class="ti ti-folder-plus" aria-hidden="true"></i><span class="btnlbl"> Carpeta</span></button>
         <div class="tdiv"></div>
-        <button class="tbtn" id="bcopy" onclick="copySelected()" disabled><i class="ti ti-copy" aria-hidden="true"></i> Copiar</button>
-        <button class="tbtn" id="bcut" onclick="cutSelected()" disabled><i class="ti ti-cut" aria-hidden="true"></i> Cortar</button>
-        <button class="tbtn" id="bpaste" onclick="pasteItems()" disabled><i class="ti ti-clipboard" aria-hidden="true"></i> Pegar</button>
-        <button class="tbtn" id="brename" onclick="renameSelected()" disabled><i class="ti ti-cursor-text" aria-hidden="true"></i> Renombrar</button>
-        <button class="tbtn dan" id="bdelete" onclick="deleteSelected()" disabled><i class="ti ti-trash" aria-hidden="true"></i> Eliminar</button>
+        <button class="tbtn" id="bcopy" onclick="copySelected()" disabled title="Copiar"><i class="ti ti-copy" aria-hidden="true"></i><span class="btnlbl"> Copiar</span></button>
+        <button class="tbtn" id="bcut" onclick="cutSelected()" disabled title="Cortar"><i class="ti ti-cut" aria-hidden="true"></i><span class="btnlbl"> Cortar</span></button>
+        <button class="tbtn" id="bpaste" onclick="pasteItems()" disabled title="Pegar"><i class="ti ti-clipboard" aria-hidden="true"></i><span class="btnlbl"> Pegar</span></button>
+        <button class="tbtn" id="brename" onclick="renameSelected()" disabled title="Renombrar"><i class="ti ti-cursor-text" aria-hidden="true"></i><span class="btnlbl"> Renombrar</span></button>
+        <button class="tbtn dan" id="bdelete" onclick="deleteSelected()" disabled title="Eliminar"><i class="ti ti-trash" aria-hidden="true"></i><span class="btnlbl"> Eliminar</span></button>
         <div class="tb-space"></div>
-        <button class="tbtn" onclick="selectAll()"><i class="ti ti-checkbox" aria-hidden="true"></i> Todo</button>
+        <button class="tbtn" onclick="selectAll()" title="Seleccionar todo"><i class="ti ti-checkbox" aria-hidden="true"></i></button>
         <button class="tbtn" id="bgrid" onclick="setView('grid')" title="Rejilla"><i class="ti ti-layout-grid" aria-hidden="true"></i></button>
         <button class="tbtn active" id="blist" onclick="setView('list')" title="Lista"><i class="ti ti-list" aria-hidden="true"></i></button>
       </div>
@@ -480,21 +490,23 @@ function renderFiles(){
   const folders=children.filter(c=>c.type==='folder').sort((a,b)=>a.name.localeCompare(b.name));
   const files=children.filter(c=>c.type==='file').sort((a,b)=>a.name.localeCompare(b.name));
   const all=[...folders,...files];
-  let html=`<div class="lhdr"><span></span><span>Nombre</span><span>Tamaño</span><span>Modificado</span><span>Estado</span></div>`;
+  let html=`<div class="lhdr"><span></span><span>Nombre</span><span class="col-sz">Tamaño</span><span class="col-dt">Modificado</span><span>Estado</span></div>`;
   all.forEach(item=>{
     const g=ic(item.type==='folder'?'folder':item.ftype||item.type);
     const isSel=S.sel.has(item.name);
     const isCut=S.cutIds.has(item.name);
-    const dot=item.type==='file'?`<span class="sdot d${(item.sync||'s')[0]}" title="${item.sync||'synced'}"></span>`:'';
-    const stcol={synced:'txSu',pending:'txWa',conflict:'txDa',new:'txIn'}[item.sync]||'txSu';
-    const stlbl=item.type==='file'?`<span style="font-size:11px;color:var(--${stcol})">${item.sync||'synced'}</span>`:`<span class="muted">—</span>`;
+    const syncState=item.sync||'synced';
+    const dotCls={synced:'txSu',pending:'txWa',conflict:'txDa',new:'txIn',syncing:'txIn'}[syncState]||'txSu';
+    const dotIcon={synced:'ti-circle-check',pending:'ti-clock',conflict:'ti-alert-triangle',new:'ti-circle-plus',syncing:'ti-refresh spin'}[syncState]||'ti-circle-check';
+    const syncDot=item.type==='file'?`<i class="ti ${dotIcon}" style="font-size:15px;color:var(--${dotCls});flex-shrink:0" title="${syncState}" aria-hidden="true"></i>`:'';
+    const stlbl=item.type==='file'?`<span class="col-st-txt muted" style="font-size:11px">${syncState}</span>`:`<span class="col-st-txt muted">—</span>`;
     const nm=item.name.replace(/'/g,"\\'");
     html+=`<div class="frow${isSel?' sel':''}${isCut?' cut':''}" data-name="${item.name}" ondblclick="onDbl('${nm}')" onclick="onRowClick(event,'${nm}')" oncontextmenu="onCtx(event,'${nm}')">
       <div class="chk"><input type="checkbox" ${isSel?'checked':''} onclick="onChk(event,'${nm}')"></div>
-      <div class="ncell"><i class="ti ${g.i}" style="color:${g.c}" aria-hidden="true"></i><span>${item.name}</span>${dot}</div>
-      <span class="muted">${fmtSz(item.size)}</span>
-      <span class="muted">${item.modified?fmtDt(item.modified):'—'}</span>
-      ${stlbl}
+      <div class="ncell"><i class="ti ${g.i}" style="color:${g.c}" aria-hidden="true"></i><span>${item.name}</span></div>
+      <span class="col-sz muted">${fmtSz(item.size)}</span>
+      <span class="col-dt muted">${item.modified?fmtDt(item.modified):'—'}</span>
+      <span style="display:flex;align-items:center;gap:4px;justify-content:flex-end">${syncDot}${stlbl}</span>
     </div>`;
   });
   area.innerHTML=html;
