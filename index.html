@@ -1840,21 +1840,78 @@ function checkAllWatchedFolders(manual){
     return;
   }
   if(manual){
-    flash('🔎 Selecciona de nuevo cada carpeta vigilada para comprobar archivos nuevos');
+    showWatchProgress(active);
     promptRecheck(active,0);
   }
+}
+
+function showWatchProgress(folders){
+  let panel=document.getElementById('watch-progress');
+  if(!panel){
+    panel=document.createElement('div');
+    panel.id='watch-progress';
+    panel.style.cssText='position:absolute;left:12px;bottom:12px;width:280px;max-width:calc(100% - 24px);background:var(--bg1);border:0.5px solid var(--bd2);border-radius:var(--rl);box-shadow:0 6px 24px rgba(0,0,0,.18);z-index:410;overflow:hidden;';
+    document.getElementById('app').appendChild(panel);
+  }
+  // Si ya hay un panel de subida de archivos visible, apilar este encima
+  const uploadPanel=document.getElementById('upload-panel');
+  if(uploadPanel&&uploadPanel.style.display!=='none'&&uploadPanel.offsetHeight>0){
+    panel.style.bottom=(12+uploadPanel.offsetHeight+10)+'px';
+  }
+  S.watchProgressFolders=folders.map(w=>({label:w.label,status:'pending'})); // pending|active|uploading|done|skipped|error
+  renderWatchProgress();
+}
+function renderWatchProgress(){
+  const panel=document.getElementById('watch-progress');
+  if(!panel||!S.watchProgressFolders)return;
+  const items=S.watchProgressFolders;
+  const allDone=items.every(i=>i.status==='done'||i.status==='skipped'||i.status==='error');
+  let html=`<div style="display:flex;align-items:center;justify-content:between;gap:8px;padding:9px 12px;border-bottom:0.5px solid var(--bd);font-size:12px;font-weight:500;">
+    <i class="ti ${allDone?'ti-circle-check':'ti-loader-2 spin'}" style="color:${allDone?'var(--txSu)':'var(--txIn)'};font-size:15px" aria-hidden="true"></i>
+    <span style="flex:1">${allDone?'Comprobación completada':'Comprobando carpetas vigiladas…'}</span>
+    ${allDone?'<button class="ibt" onclick="closeWatchProgress()" style="font-size:14px;padding:2px"><i class="ti ti-x" aria-hidden="true"></i></button>':''}
+  </div><div style="max-height:240px;overflow-y:auto;">`;
+  items.forEach(it=>{
+    const cfg={
+      pending:{icon:'ti-clock',color:'var(--txT)',text:'En espera…'},
+      active:{icon:'ti-loader-2 spin',color:'var(--txIn)',text:'Esperando selección de carpeta…'},
+      uploading:{icon:'ti-cloud-upload',color:'var(--txIn)',text:it.detail||'Subiendo archivos nuevos…'},
+      done:{icon:'ti-circle-check',color:'var(--txSu)',text:it.detail||'Sin novedades'},
+      skipped:{icon:'ti-player-skip-forward',color:'var(--txWa)',text:'Omitida'},
+      error:{icon:'ti-alert-triangle',color:'var(--txDa)',text:it.detail||'Error al comprobar'}
+    }[it.status];
+    html+=`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:0.5px solid var(--bd);font-size:11.5px;">
+      <i class="ti ${cfg.icon}" style="color:${cfg.color};font-size:15px;flex-shrink:0" aria-hidden="true"></i>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.label}</div>
+        <div style="color:var(--txT);font-size:10.5px;">${cfg.text}</div>
+      </div>
+    </div>`;
+  });
+  html+='</div>';
+  panel.innerHTML=html;
+}
+function closeWatchProgress(){
+  const panel=document.getElementById('watch-progress');
+  if(panel)panel.remove();
+  S.watchProgressFolders=null;
 }
 
 function promptRecheck(folders,idx){
   if(idx>=folders.length){
     localStorage.setItem('cs_watch_lastcheck',Date.now());
     renderWatchStatus();
+    renderWatchProgress();
     flash('✅ Comprobación completada');
+    setTimeout(()=>{if(S.watchProgressFolders&&S.watchProgressFolders.every(i=>i.status==='done'||i.status==='skipped'||i.status==='error'))closeWatchProgress();},4000);
     return;
   }
   const w=folders[idx];
-  if(!confirm('Selecciona de nuevo la carpeta "'+w.label+'" en el siguiente diálogo para comprobar si hay archivos nuevos.'))
-    { promptRecheck(folders,idx+1); return; }
+  if(S.watchProgressFolders&&S.watchProgressFolders[idx]){S.watchProgressFolders[idx].status='active';renderWatchProgress();}
+  if(!confirm('Selecciona de nuevo la carpeta "'+w.label+'" en el siguiente diálogo para comprobar si hay archivos nuevos.')){
+    if(S.watchProgressFolders&&S.watchProgressFolders[idx]){S.watchProgressFolders[idx].status='skipped';renderWatchProgress();}
+    promptRecheck(folders,idx+1); return;
+  }
   S._recheckWatch=w;
   S._recheckQueue=folders;
   S._recheckIdx=idx;
@@ -1867,27 +1924,35 @@ _origFiwatchHandler.addEventListener('change',e=>{
   if(!S._recheckWatch)return; // el otro listener ya gestiona el caso "nueva carpeta"
   const files=[...e.target.files];
   const w=S._recheckWatch;
+  const idx=S._recheckIdx;
   const knownSet=new Set(w.knownFiles.map(k=>k.name+'|'+k.size));
   const newFiles=files.filter(f=>{
     const key=(f.webkitRelativePath||f.name)+'|'+f.size;
     return !knownSet.has(key) && matchesFileType(f.name,w.fileTypes);
   });
 
+  const progressItem=S.watchProgressFolders&&S.watchProgressFolders[idx];
+
   if(w.network==='wifi'&&!isOnWifi()){
     addLog('warn','Subida pospuesta: '+w.label,'Esperando conexión Wifi');
+    if(progressItem){progressItem.status='skipped';progressItem.detail='Esperando Wifi';renderWatchProgress();}
   }else if(newFiles.length){
     addLog('info','Detectados '+newFiles.length+' archivo(s) nuevos en '+w.label,'');
+    if(progressItem){progressItem.status='uploading';progressItem.detail='Subiendo '+newFiles.length+' archivo(s)…';renderWatchProgress();}
     const destNode=getNode(w.destPath);
     if(destNode&&destNode.children){
+      let uploadedCount=0;
       newFiles.forEach(f=>{
         const ftype=detectType(f.name,f.type);
         destNode.children[f.name]={type:'file',ftype,size:f.size,modified:new Date().toISOString().split('T')[0],sync:'syncing',name:f.name};
-        wdavUploadAt(w.destPath,f);
+        wdavUploadAt(w.destPath,f).finally?.(()=>{}); // wdavUploadAt no devuelve promesa explícita, así que marcamos progreso optimista
       });
       renderTree();renderFiles();
+      if(progressItem){progressItem.status='done';progressItem.detail=newFiles.length+' archivo(s) subido(s)';renderWatchProgress();}
     }
   } else {
     addLog('info','Sin novedades en '+w.label,'');
+    if(progressItem){progressItem.status='done';progressItem.detail='Sin archivos nuevos';renderWatchProgress();}
   }
 
   // Actualiza la huella con TODOS los archivos vistos ahora
@@ -1895,7 +1960,7 @@ _origFiwatchHandler.addEventListener('change',e=>{
   saveWatchedFolders();
 
   e.target.value='';
-  const queue=S._recheckQueue,idx=S._recheckIdx;
+  const queue=S._recheckQueue;
   S._recheckWatch=null;
   if(queue) promptRecheck(queue,idx+1);
 });
