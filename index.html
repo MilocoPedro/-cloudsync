@@ -461,9 +461,39 @@ button,input{font-family:var(--font);}
     </div>
   </div>
 
+  <!-- SYNCED FILES / FREE UP SPACE MODAL -->
+  <div class="mover" id="m-syncedfiles">
+    <div class="mbox" style="max-width:420px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+        <h3 style="margin-bottom:0"><i class="ti ti-device-mobile-x" style="color:#0082c9" aria-hidden="true"></i> Liberar espacio</h3>
+        <button class="ibt" onclick="closeM('m-syncedfiles')" title="Cerrar"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <p style="font-size:12px;color:var(--txS);margin-bottom:6px;line-height:1.6;">
+        Estos archivos de <b id="sf-folder-name"></b> ya están sincronizados en Nextcloud. Puedes borrarlos de tu dispositivo para liberar espacio.
+      </p>
+      <p style="font-size:11px;color:var(--txWa);background:var(--bgW);padding:8px 10px;border-radius:var(--r);margin-bottom:12px;line-height:1.5;">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i> El navegador no puede borrar archivos automáticamente por seguridad. Te abrimos el selector de tu dispositivo para que los borres tú mismo en unos segundos.
+      </p>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:11px;color:var(--txT);text-transform:uppercase;letter-spacing:.04em;font-weight:600;">Archivos sincronizados</span>
+        <span style="font-size:11px;color:var(--txS);" id="sf-total"></span>
+      </div>
+      <div id="sf-list" style="max-height:240px;overflow-y:auto;border:0.5px solid var(--bd);border-radius:var(--r);margin-bottom:14px;"></div>
+
+      <button class="tbtn pr" style="width:100%;justify-content:center;" onclick="openSystemFilePicker()">
+        <i class="ti ti-folder-open" aria-hidden="true"></i> Abrir selector de archivos del dispositivo
+      </button>
+      <p style="font-size:10.5px;color:var(--txT);text-align:center;margin-top:8px;line-height:1.5;">
+        Selecciona los archivos de la lista de arriba en el selector y pulsa "Eliminar" o "Borrar" en tu dispositivo.
+      </p>
+    </div>
+  </div>
+
   <input type="file" id="fi" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.webp,.gif,.odt,.ods,.odp" style="display:none">
   <input type="file" id="fidir" webkitdirectory directory multiple style="display:none">
   <input type="file" id="fiwatch" webkitdirectory directory multiple style="display:none">
+  <input type="file" id="fipicker" multiple style="display:none">
 
   <!-- FILE BROWSER MODAL -->
   <div class="mover" id="m-filebrowser" style="z-index:800">
@@ -1672,6 +1702,8 @@ function renderWatchList(){
   list.innerHTML=S.watchedFolders.map(w=>{
     const typeLabel={all:'Todos los archivos',media:'Solo fotos y vídeos',docs:'Solo documentos'}[w.fileTypes]||'Todos';
     const netLabel={wifi:'Solo con Wifi','any':'Wifi y datos móviles'}[w.network]||'Wifi y datos móviles';
+    const syncedCount=(w.knownFiles||[]).length;
+    const syncedSize=(w.knownFiles||[]).reduce((s,f)=>s+(f.size||0),0);
     return `<div style="border:0.5px solid var(--bd);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
         <i class="ti ti-folder" style="color:#faad14;font-size:18px;flex-shrink:0" aria-hidden="true"></i>
@@ -1684,11 +1716,13 @@ function renderWatchList(){
         <span><i class="ti ti-arrow-right" style="font-size:11px" aria-hidden="true"></i> Destino: ${w.destPath==='/'?'Inicio':w.destPath}</span>
         <span><i class="ti ti-filter" style="font-size:11px" aria-hidden="true"></i> ${typeLabel}</span>
         <span><i class="ti ti-wifi" style="font-size:11px" aria-hidden="true"></i> ${netLabel}</span>
+        ${syncedCount>0?`<span><i class="ti ti-circle-check" style="font-size:11px;color:var(--txSu)" aria-hidden="true"></i> ${syncedCount} archivo(s) sincronizado(s) · ${fmtSz(syncedSize)}</span>`:''}
       </div>
       <div style="display:flex;gap:6px;">
         <button class="tbtn" style="flex:1;font-size:11px;padding:5px 8px;justify-content:center;" onclick="editWatchedFolder('${w.id}')"><i class="ti ti-settings" aria-hidden="true"></i> Ajustes</button>
         <button class="tbtn dan" style="flex:1;font-size:11px;padding:5px 8px;justify-content:center;" onclick="removeWatchedFolder('${w.id}')"><i class="ti ti-trash" aria-hidden="true"></i> Quitar</button>
       </div>
+      ${syncedCount>0?`<button class="tbtn" style="width:100%;font-size:11px;padding:6px 8px;justify-content:center;margin-top:6px;" onclick="showSyncedFiles('${w.id}')"><i class="ti ti-device-mobile-x" aria-hidden="true"></i> Liberar espacio del dispositivo</button>`:''}
     </div>`;
   }).join('');
 }
@@ -1719,6 +1753,46 @@ function toggleWatchedFolder(id,enabled){
   const w=S.watchedFolders.find(x=>x.id===id);
   if(w){w.enabled=enabled;saveWatchedFolders();}
 }
+
+/* ===== LIBERAR ESPACIO: archivos ya sincronizados ===== */
+function showSyncedFiles(id){
+  const w=S.watchedFolders.find(x=>x.id===id);
+  if(!w||!w.knownFiles||!w.knownFiles.length){flash('No hay archivos sincronizados todavía en esta carpeta');return;}
+  S.syncedFilesContext={watchId:id};
+  document.getElementById('sf-folder-name').textContent=w.label;
+  renderSyncedFilesList(w);
+  openM('m-syncedfiles');
+}
+
+function renderSyncedFilesList(w){
+  const files=w.knownFiles||[];
+  const totalSize=files.reduce((s,f)=>s+(f.size||0),0);
+  document.getElementById('sf-total').textContent=files.length+' archivo(s) · '+fmtSz(totalSize);
+  const list=document.getElementById('sf-list');
+  list.innerHTML=files.map((f,i)=>{
+    const shortName=f.name.split('/').pop();
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:0.5px solid var(--bd);font-size:11.5px;">
+      <i class="ti ti-circle-check" style="color:var(--txSu);font-size:14px;flex-shrink:0" aria-hidden="true"></i>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${shortName}</span>
+      <span style="color:var(--txT);flex-shrink:0;">${fmtSz(f.size)}</span>
+    </div>`;
+  }).join('');
+}
+
+function openSystemFilePicker(){
+  // No existe API web para borrar archivos del dispositivo ni para forzar una carpeta
+  // exacta en el selector del sistema. Lo más cercano permitido por el navegador es
+  // invocar el selector de archivos nativo para que el usuario localice y borre
+  // los archivos él mismo desde ahí (en Android/iOS el selector ofrece opciones
+  // de gestión de archivo al mantener pulsado o según el proveedor que elija).
+  flash('📂 Abriendo selector del dispositivo — busca y borra los archivos de la lista');
+  document.getElementById('fipicker').click();
+}
+// Este input es solo para que el usuario navegue/borre desde el selector del sistema.
+// No subimos nada al elegir: si selecciona algo, simplemente cerramos el picker sin acción.
+document.getElementById('fipicker').addEventListener('change',e=>{
+  e.target.value='';
+});
 
 document.getElementById('fiwatch').addEventListener('change',e=>{
   if(S._recheckWatch)return; // este evento lo gestiona el listener de recomprobación, no este
