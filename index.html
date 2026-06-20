@@ -2034,33 +2034,62 @@ _origFiwatchHandler.addEventListener('change',e=>{
   if(w.network==='wifi'&&!isOnWifi()){
     addLog('warn','Subida pospuesta: '+w.label,'Esperando conexión Wifi');
     if(progressItem){progressItem.status='skipped';progressItem.detail='Esperando Wifi';renderWatchProgress();}
+    finishRecheckStep();
   }else if(newFiles.length){
     addLog('info','Detectados '+newFiles.length+' archivo(s) nuevos en '+w.label,'');
-    if(progressItem){progressItem.status='uploading';progressItem.detail='Subiendo '+newFiles.length+' archivo(s)…';renderWatchProgress();}
+    if(progressItem){progressItem.status='uploading';progressItem.detail='Subiendo 0 de '+newFiles.length+'…';renderWatchProgress();}
     const destNode=getNode(w.destPath);
     if(destNode&&destNode.children){
-      let uploadedCount=0;
       newFiles.forEach(f=>{
         const ftype=detectType(f.name,f.type);
         destNode.children[f.name]={type:'file',ftype,size:f.size,modified:new Date().toISOString().split('T')[0],sync:'syncing',name:f.name};
-        wdavUploadAt(w.destPath,f).finally?.(()=>{}); // wdavUploadAt no devuelve promesa explícita, así que marcamos progreso optimista
       });
       renderTree();renderFiles();
-      if(progressItem){progressItem.status='done';progressItem.detail=newFiles.length+' archivo(s) subido(s)';renderWatchProgress();}
+
+      // Esperar de verdad a que todas las subidas terminen (éxito o fallo) antes de marcar como hecho
+      let succeeded=0,failed=0,completed=0;
+      const uploadPromises=newFiles.map(f=>
+        wdavUploadAt(w.destPath,f)
+          .then(()=>{succeeded++;})
+          .catch(()=>{failed++;})
+          .finally(()=>{
+            completed++;
+            if(progressItem){progressItem.detail='Subiendo '+completed+' de '+newFiles.length+'…';renderWatchProgress();}
+          })
+      );
+      Promise.all(uploadPromises).then(()=>{
+        if(progressItem){
+          progressItem.status=failed>0?'error':'done';
+          progressItem.detail=failed>0
+            ? succeeded+' subido(s), '+failed+' con error'
+            : succeeded+' archivo(s) subido(s)';
+          renderWatchProgress();
+        }
+        renderFiles();renderTree();
+        finishRecheckStep();
+      });
+    } else {
+      if(progressItem){progressItem.status='error';progressItem.detail='Carpeta destino no encontrada';renderWatchProgress();}
+      finishRecheckStep();
     }
   } else {
     addLog('info','Sin novedades en '+w.label,'');
     if(progressItem){progressItem.status='done';progressItem.detail='Sin archivos nuevos';renderWatchProgress();}
+    finishRecheckStep();
   }
 
-  // Actualiza la huella con TODOS los archivos vistos ahora
+  // Actualiza la huella con TODOS los archivos vistos ahora (esto sí puede hacerse ya)
   w.knownFiles=files.map(f=>({name:f.webkitRelativePath||f.name,size:f.size,modified:f.lastModified}));
   saveWatchedFolders();
-
   e.target.value='';
-  const queue=S._recheckQueue;
-  S._recheckWatch=null;
-  if(queue) promptRecheck(queue,idx+1);
+
+  // finishRecheckStep se llama SOLO cuando el trabajo real (si lo hay) ha terminado de verdad,
+  // nunca antes — así no se avanza a la siguiente carpeta mientras aún se está subiendo.
+  function finishRecheckStep(){
+    const queue=S._recheckQueue;
+    S._recheckWatch=null;
+    if(queue) promptRecheck(queue,idx+1);
+  }
 });
 
 /* Comprobación automática silenciosa al abrir la app (best-effort, sin re-pedir carpeta) */
