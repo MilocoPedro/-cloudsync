@@ -252,6 +252,7 @@ button,input{font-family:var(--font);}
       <i class="ti ti-wifi-off" id="sicon" aria-hidden="true"></i>
       <span id="slabel">Sin conexión</span>
     </div>
+    <button class="ibt" onclick="showAutoUpload()" title="Subida automática" id="autobtn"><i class="ti ti-bolt" aria-hidden="true"></i></button>
     <button class="ibt" onclick="showSetup()" title="Configuración"><i class="ti ti-settings" aria-hidden="true"></i></button>
   </div>
 
@@ -408,8 +409,36 @@ button,input{font-family:var(--font);}
     </div>
   </div>
 
+  <!-- AUTO-UPLOAD MODAL -->
+  <div class="mover" id="m-autoupload">
+    <div class="mbox" style="max-width:420px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+        <h3 style="margin-bottom:0"><i class="ti ti-bolt" style="color:#0082c9" aria-hidden="true"></i> Subida automática</h3>
+        <button class="ibt" onclick="closeM('m-autoupload')" title="Cerrar"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <p style="font-size:12px;color:var(--txS);margin-bottom:16px;line-height:1.6;">
+        Vigila carpetas de tu dispositivo. Cada vez que abras CloudSync, comprobará si hay archivos nuevos y los subirá solos a la carpeta de Nextcloud que elijas.
+      </p>
+
+      <div id="watch-list" style="margin-bottom:14px;"></div>
+
+      <button class="tbtn" style="width:100%;justify-content:center;margin-bottom:14px;" onclick="addWatchedFolder()">
+        <i class="ti ti-folder-plus" aria-hidden="true"></i> Añadir carpeta vigilada
+      </button>
+
+      <div style="border-top:0.5px solid var(--bd);padding-top:12px;">
+        <div style="font-size:11px;color:var(--txT);text-transform:uppercase;letter-spacing:.04em;font-weight:600;margin-bottom:8px;">Estado</div>
+        <div id="watch-status" style="font-size:12px;color:var(--txS);line-height:1.6;"></div>
+        <button class="tbtn" style="width:100%;justify-content:center;margin-top:10px;" onclick="checkAllWatchedFolders(true)">
+          <i class="ti ti-refresh" aria-hidden="true"></i> Comprobar ahora
+        </button>
+      </div>
+    </div>
+  </div>
+
   <input type="file" id="fi" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.webp,.gif,.odt,.ods,.odp" style="display:none">
   <input type="file" id="fidir" webkitdirectory directory multiple style="display:none">
+  <input type="file" id="fiwatch" webkitdirectory directory multiple style="display:none">
 
   <!-- FILE BROWSER MODAL -->
   <div class="mover" id="m-filebrowser" style="z-index:800">
@@ -1400,8 +1429,284 @@ async function fbUploadSelected() {
   flash('⬆️ ' + toUpload.length + ' archivo(s) enviado(s) a la cola');
 }
 
-/* ===== INIT ===== */
+/* ===== AUTO-UPLOAD: WATCHED FOLDERS ===== */
+/*
+  Limitación real de navegador: no existe API web para vigilar carpetas del
+  sistema en segundo plano. La aproximación: el usuario selecciona una carpeta
+  vía <input webkitdirectory>, guardamos la "huella" (nombre+tamaño+fecha) de
+  cada archivo visto. Cada vez que se abre la app (o se pulsa "Comprobar ahora"),
+  se vuelve a pedir esa misma carpeta y se comparan archivos para detectar
+  los nuevos, subiendo automáticamente solo esos.
+*/
+S.watchedFolders=[]; // {id,label,destPath,fileTypes,network,enabled,knownFiles:[{name,size,modified}]}
+S.watchPendingId=null;
+
+function loadWatchedFolders(){
+  try{
+    const raw=localStorage.getItem('cs_watched');
+    if(raw) S.watchedFolders=JSON.parse(raw);
+  }catch(e){S.watchedFolders=[];}
+}
+function saveWatchedFolders(){
+  try{localStorage.setItem('cs_watched',JSON.stringify(S.watchedFolders));}catch(e){}
+}
+
+function showAutoUpload(){
+  renderWatchList();
+  renderWatchStatus();
+  openM('m-autoupload');
+}
+
+function renderWatchList(){
+  const list=document.getElementById('watch-list');
+  if(!S.watchedFolders.length){
+    list.innerHTML='<div style="text-align:center;padding:20px;color:var(--txT);font-size:12px;"><i class="ti ti-folder-search" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4" aria-hidden="true"></i>No hay carpetas vigiladas todavía</div>';
+    return;
+  }
+  list.innerHTML=S.watchedFolders.map(w=>{
+    const typeLabel={all:'Todos los archivos',media:'Solo fotos y vídeos',docs:'Solo documentos'}[w.fileTypes]||'Todos';
+    const netLabel={wifi:'Solo con Wifi','any':'Wifi y datos móviles'}[w.network]||'Wifi y datos móviles';
+    return `<div style="border:0.5px solid var(--bd);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <i class="ti ti-folder" style="color:#faad14;font-size:18px;flex-shrink:0" aria-hidden="true"></i>
+        <span style="font-size:13px;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${w.label}</span>
+        <label style="position:relative;display:inline-flex;align-items:center;cursor:pointer;flex-shrink:0;">
+          <input type="checkbox" ${w.enabled?'checked':''} onchange="toggleWatchedFolder('${w.id}',this.checked)" style="width:32px;height:18px;accent-color:#0082c9;cursor:pointer;">
+        </label>
+      </div>
+      <div style="font-size:11px;color:var(--txS);display:flex;flex-direction:column;gap:2px;margin-bottom:8px;">
+        <span><i class="ti ti-arrow-right" style="font-size:11px" aria-hidden="true"></i> Destino: ${w.destPath==='/'?'Inicio':w.destPath}</span>
+        <span><i class="ti ti-filter" style="font-size:11px" aria-hidden="true"></i> ${typeLabel}</span>
+        <span><i class="ti ti-wifi" style="font-size:11px" aria-hidden="true"></i> ${netLabel}</span>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="tbtn" style="flex:1;font-size:11px;padding:5px 8px;justify-content:center;" onclick="editWatchedFolder('${w.id}')"><i class="ti ti-settings" aria-hidden="true"></i> Ajustes</button>
+        <button class="tbtn dan" style="flex:1;font-size:11px;padding:5px 8px;justify-content:center;" onclick="removeWatchedFolder('${w.id}')"><i class="ti ti-trash" aria-hidden="true"></i> Quitar</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderWatchStatus(){
+  const el=document.getElementById('watch-status');
+  const enabled=S.watchedFolders.filter(w=>w.enabled).length;
+  if(!S.watchedFolders.length){el.textContent='Añade una carpeta para empezar.';return;}
+  const last=localStorage.getItem('cs_watch_lastcheck');
+  el.innerHTML=`${enabled} de ${S.watchedFolders.length} carpeta(s) activa(s).<br>${last?'Última comprobación: '+new Date(parseInt(last)).toLocaleString('es-ES'):'Aún no se ha comprobado.'}`;
+}
+
+function addWatchedFolder(){
+  S.watchPendingId='new';
+  document.getElementById('fiwatch').click();
+}
+function editWatchedFolder(id){
+  const w=S.watchedFolders.find(x=>x.id===id);
+  if(!w)return;
+  openWatchConfigModal(w);
+}
+function removeWatchedFolder(id){
+  if(!confirm('¿Quitar esta carpeta vigilada? No se borrará nada de Nextcloud.'))return;
+  S.watchedFolders=S.watchedFolders.filter(x=>x.id!==id);
+  saveWatchedFolders();renderWatchList();
+}
+function toggleWatchedFolder(id,enabled){
+  const w=S.watchedFolders.find(x=>x.id===id);
+  if(w){w.enabled=enabled;saveWatchedFolders();}
+}
+
+document.getElementById('fiwatch').addEventListener('change',e=>{
+  if(S._recheckWatch)return; // este evento lo gestiona el listener de recomprobación, no este
+  const files=[...e.target.files];
+  if(!files.length)return;
+  const folderLabel=(files[0].webkitRelativePath||'').split('/')[0]||'Carpeta';
+  const knownFiles=files.map(f=>({name:f.webkitRelativePath||f.name,size:f.size,modified:f.lastModified}));
+  const newWatch={
+    id:'w'+Date.now(),
+    label:folderLabel,
+    destPath:S.path,
+    fileTypes:'all',
+    network:'any',
+    enabled:true,
+    knownFiles // huella inicial: lo que ya hay no se sube, solo lo NUEVO a partir de ahora
+  };
+  e.target.value='';
+  openWatchConfigModal(newWatch,true);
+});
+
+function openWatchConfigModal(watch,isNew){
+  // Modal simple de configuración reutilizando m-uploaddest-style picker para destino
+  const destList=getAllFolders('/').map(({path,depth,name})=>
+    `<div class="mvi${path===watch.destPath?' sel':''}" style="padding-left:${12+depth*14}px" data-path="${path}">
+      <i class="ti ti-folder" aria-hidden="true"></i>${name==='/'?'Inicio':name}
+    </div>`).join('');
+
+  const formHtml=`
+    <h3><i class="ti ti-folder-cog" aria-hidden="true"></i> ${isNew?'Configurar carpeta nueva':'Ajustes de "'+watch.label+'"'}</h3>
+    <label class="flbl" style="margin-top:0">Nombre</label>
+    <input type="text" id="wf-label" value="${watch.label}">
+    <label class="flbl">Subir a esta carpeta de Nextcloud</label>
+    <div class="mvlist" id="wf-destlist">${destList}</div>
+    <label class="flbl">Qué subir</label>
+    <select id="wf-filetypes" style="width:100%;padding:9px 11px;border:0.5px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--bg2);color:var(--txP);">
+      <option value="all" ${watch.fileTypes==='all'?'selected':''}>Todos los archivos</option>
+      <option value="media" ${watch.fileTypes==='media'?'selected':''}>Solo fotos y vídeos</option>
+      <option value="docs" ${watch.fileTypes==='docs'?'selected':''}>Solo documentos (PDF, Word, Excel…)</option>
+    </select>
+    <label class="flbl">Cuándo subir</label>
+    <select id="wf-network" style="width:100%;padding:9px 11px;border:0.5px solid var(--bd2);border-radius:var(--r);font-size:13px;background:var(--bg2);color:var(--txP);">
+      <option value="any" ${watch.network==='any'?'selected':''}>Wifi y datos móviles</option>
+      <option value="wifi" ${watch.network==='wifi'?'selected':''}>Solo con Wifi</option>
+    </select>
+    <div class="mbtns" style="margin-top:18px;">
+      <button class="mca" onclick="closeM('m-wfconfig')">Cancelar</button>
+      <button class="mok" onclick="saveWatchConfig('${watch.id}')">${isNew?'Guardar carpeta':'Guardar cambios'}</button>
+    </div>
+  `;
+
+  let modal=document.getElementById('m-wfconfig');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='m-wfconfig';
+    modal.className='mover';
+    document.getElementById('app').appendChild(modal);
+  }
+  modal.innerHTML=`<div class="mbox">${formHtml}</div>`;
+  modal.classList.add('show');
+
+  // Track selected dest path
+  modal.querySelectorAll('.mvi').forEach(el=>{
+    el.onclick=()=>{
+      modal.querySelectorAll('.mvi').forEach(x=>x.classList.remove('sel'));
+      el.classList.add('sel');
+      modal.dataset.selectedDest=el.dataset.path;
+    };
+  });
+  modal.dataset.selectedDest=watch.destPath;
+
+  // Stash the pending watch object for save
+  S._pendingWatch=watch;
+  S._pendingWatchIsNew=isNew;
+}
+
+function saveWatchConfig(id){
+  const modal=document.getElementById('m-wfconfig');
+  const watch=S._pendingWatch;
+  if(!watch){closeM('m-wfconfig');return;}
+  watch.label=document.getElementById('wf-label').value.trim()||watch.label;
+  watch.destPath=modal.dataset.selectedDest||watch.destPath||'/';
+  watch.fileTypes=document.getElementById('wf-filetypes').value;
+  watch.network=document.getElementById('wf-network').value;
+
+  if(S._pendingWatchIsNew){
+    S.watchedFolders.push(watch);
+    flash('⚡ Carpeta vigilada añadida: '+watch.label);
+  }else{
+    flash('⚡ Ajustes guardados: '+watch.label);
+  }
+  saveWatchedFolders();
+  closeM('m-wfconfig');
+  renderWatchList();
+  renderWatchStatus();
+}
+
+function matchesFileType(filename,filterType){
+  if(filterType==='all')return true;
+  const ext=(filename.split('.').pop()||'').toLowerCase();
+  if(filterType==='media')return['jpg','jpeg','png','gif','webp','heic','mp4','mov','avi','mkv'].includes(ext);
+  if(filterType==='docs')return['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','csv','odt','ods','odp'].includes(ext);
+  return true;
+}
+function isOnWifi(){
+  if(!navigator.connection)return true; // si el navegador no expone la info, no bloqueamos
+  const type=navigator.connection.type||navigator.connection.effectiveType||'';
+  return type==='wifi'||!navigator.connection.type; // best-effort
+}
+
+/* Comprobación: vuelve a pedir la MISMA carpeta para comparar con la huella guardada */
+function checkAllWatchedFolders(manual){
+  const active=S.watchedFolders.filter(w=>w.enabled);
+  if(!active.length){
+    if(manual){closeM('m-autoupload');flash('No hay carpetas vigiladas activas');}
+    return;
+  }
+  if(!S.connected){
+    if(manual)flash('⚠️ Conecta tu Nextcloud primero para sincronizar');
+    return;
+  }
+  if(manual){
+    flash('🔎 Selecciona de nuevo cada carpeta vigilada para comprobar archivos nuevos');
+    promptRecheck(active,0);
+  }
+}
+
+function promptRecheck(folders,idx){
+  if(idx>=folders.length){
+    localStorage.setItem('cs_watch_lastcheck',Date.now());
+    renderWatchStatus();
+    flash('✅ Comprobación completada');
+    return;
+  }
+  const w=folders[idx];
+  if(!confirm('Selecciona de nuevo la carpeta "'+w.label+'" en el siguiente diálogo para comprobar si hay archivos nuevos.'))
+    { promptRecheck(folders,idx+1); return; }
+  S._recheckWatch=w;
+  S._recheckQueue=folders;
+  S._recheckIdx=idx;
+  document.getElementById('fiwatch').click();
+}
+
+// Extiende el listener existente para soportar también el flujo de recomprobación
+const _origFiwatchHandler=document.getElementById('fiwatch');
+_origFiwatchHandler.addEventListener('change',e=>{
+  if(!S._recheckWatch)return; // el otro listener ya gestiona el caso "nueva carpeta"
+  const files=[...e.target.files];
+  const w=S._recheckWatch;
+  const knownSet=new Set(w.knownFiles.map(k=>k.name+'|'+k.size));
+  const newFiles=files.filter(f=>{
+    const key=(f.webkitRelativePath||f.name)+'|'+f.size;
+    return !knownSet.has(key) && matchesFileType(f.name,w.fileTypes);
+  });
+
+  if(w.network==='wifi'&&!isOnWifi()){
+    addLog('warn','Subida pospuesta: '+w.label,'Esperando conexión Wifi');
+  }else if(newFiles.length){
+    addLog('info','Detectados '+newFiles.length+' archivo(s) nuevos en '+w.label,'');
+    const destNode=getNode(w.destPath);
+    if(destNode&&destNode.children){
+      newFiles.forEach(f=>{
+        const ftype=detectType(f.name,f.type);
+        destNode.children[f.name]={type:'file',ftype,size:f.size,modified:new Date().toISOString().split('T')[0],sync:'syncing',name:f.name};
+        wdavUploadAt(w.destPath,f);
+      });
+      renderTree();renderFiles();
+    }
+  } else {
+    addLog('info','Sin novedades en '+w.label,'');
+  }
+
+  // Actualiza la huella con TODOS los archivos vistos ahora
+  w.knownFiles=files.map(f=>({name:f.webkitRelativePath||f.name,size:f.size,modified:f.lastModified}));
+  saveWatchedFolders();
+
+  e.target.value='';
+  const queue=S._recheckQueue,idx=S._recheckIdx;
+  S._recheckWatch=null;
+  if(queue) promptRecheck(queue,idx+1);
+});
+
+/* Comprobación automática silenciosa al abrir la app (best-effort, sin re-pedir carpeta) */
+function autoCheckOnOpen(){
+  // No podemos re-leer la carpeta sin interacción del usuario (restricción del navegador),
+  // así que solo mostramos un aviso si hay carpetas activas para invitar a comprobar.
+  const active=S.watchedFolders.filter(w=>w.enabled);
+  if(active.length>0){
+    addLog('info',active.length+' carpeta(s) vigilada(s) activa(s)','Pulsa ⚡ y "Comprobar ahora" para revisar');
+  }
+}
+
+
 (function(){
+  loadWatchedFolders();
   if(loadSavedConfig()){
     // Credenciales guardadas — conectar directamente sin mostrar el modal
     document.getElementById('setup-ov').style.display='none';
@@ -1418,6 +1723,7 @@ async function fbUploadSelected() {
     // Sin credenciales guardadas — mostrar modal de conexión
     renderTree();renderBreadcrumb();renderFiles();updateTB();
   }
+  autoCheckOnOpen();
 })();
 </script>
 </body>
