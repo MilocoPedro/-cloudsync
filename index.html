@@ -2038,18 +2038,39 @@ _origFiwatchHandler.addEventListener('change',e=>{
   }else if(newFiles.length){
     addLog('info','Detectados '+newFiles.length+' archivo(s) nuevos en '+w.label,'');
     if(progressItem){progressItem.status='uploading';progressItem.detail='Subiendo 0 de '+newFiles.length+'…';renderWatchProgress();}
-    const destNode=getNode(w.destPath);
-    if(destNode&&destNode.children){
-      newFiles.forEach(f=>{
-        const ftype=detectType(f.name,f.type);
-        destNode.children[f.name]={type:'file',ftype,size:f.size,modified:new Date().toISOString().split('T')[0],sync:'syncing',name:f.name};
+    const destRoot=getNode(w.destPath);
+    if(destRoot&&destRoot.children){
+      // Para cada archivo nuevo, recrea su ruta de subcarpetas relativa dentro de w.destPath,
+      // igual que hace "Subir carpeta" — así no todo cae plano en la carpeta raíz del destino.
+      const folderCreationCache=new Set(); // evita crear la misma subcarpeta varias veces en este lote
+      const uploadTargets=newFiles.map(f=>{
+        const relPath=f.webkitRelativePath||f.name;
+        const parts=relPath.split('/').filter(Boolean);
+        const fileName=parts.pop();
+        let cur=destRoot;
+        let curPath=w.destPath;
+        parts.forEach(folderName=>{
+          if(!cur.children[folderName]){
+            cur.children[folderName]={type:'folder',name:folderName,children:{}};
+            const cacheKey=curPath+'/'+folderName;
+            if(S.connected&&!folderCreationCache.has(cacheKey)){
+              folderCreationCache.add(cacheKey);
+              wdavMkdirAt(curPath,folderName);
+            }
+          }
+          cur=cur.children[folderName];
+          curPath=pjoin(curPath,folderName);
+        });
+        const ftype=detectType(fileName,f.type);
+        cur.children[fileName]={type:'file',ftype,size:f.size,modified:new Date().toISOString().split('T')[0],sync:'syncing',name:fileName};
+        return{file:f,uploadPath:curPath};
       });
       renderTree();renderFiles();
 
       // Esperar de verdad a que todas las subidas terminen (éxito o fallo) antes de marcar como hecho
       let succeeded=0,failed=0,completed=0;
-      const uploadPromises=newFiles.map(f=>
-        wdavUploadAt(w.destPath,f)
+      const uploadPromises=uploadTargets.map(({file,uploadPath})=>
+        wdavUploadAt(uploadPath,file)
           .then(()=>{succeeded++;})
           .catch(()=>{failed++;})
           .finally(()=>{
