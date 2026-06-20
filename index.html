@@ -1932,7 +1932,8 @@ function showWatchProgress(folders){
   if(uploadPanel&&uploadPanel.style.display!=='none'&&uploadPanel.offsetHeight>0){
     panel.style.bottom=(12+uploadPanel.offsetHeight+10)+'px';
   }
-  S.watchProgressFolders=folders.map(w=>({label:w.label,status:'pending'})); // pending|active|uploading|done|skipped|error
+  S.watchProgressFolders=folders.map(w=>({label:w.label,status:'pending'})); // pending|waiting_click|uploading|done|skipped|error
+  S._recheckQueueRef=folders; // referencia a los objetos de carpeta originales (con id, destPath, etc.)
   renderWatchProgress();
 }
 function renderWatchProgress(){
@@ -1943,23 +1944,26 @@ function renderWatchProgress(){
   let html=`<div style="display:flex;align-items:center;justify-content:between;gap:8px;padding:9px 12px;border-bottom:0.5px solid var(--bd);font-size:12px;font-weight:500;">
     <i class="ti ${allDone?'ti-circle-check':'ti-loader-2 spin'}" style="color:${allDone?'var(--txSu)':'var(--txIn)'};font-size:15px" aria-hidden="true"></i>
     <span style="flex:1">${allDone?'Comprobación completada':'Comprobando carpetas vigiladas…'}</span>
-    ${allDone?'<button class="ibt" onclick="closeWatchProgress()" style="font-size:14px;padding:2px"><i class="ti ti-x" aria-hidden="true"></i></button>':''}
-  </div><div style="max-height:240px;overflow-y:auto;">`;
-  items.forEach(it=>{
+    <button class="ibt" onclick="closeWatchProgress()" style="font-size:14px;padding:2px"><i class="ti ti-x" aria-hidden="true"></i></button>
+  </div><div style="max-height:280px;overflow-y:auto;">`;
+  items.forEach((it,idx)=>{
     const cfg={
       pending:{icon:'ti-clock',color:'var(--txT)',text:'En espera…'},
-      active:{icon:'ti-loader-2 spin',color:'var(--txIn)',text:'Esperando selección de carpeta…'},
+      waiting_click:{icon:'ti-hand-click',color:'var(--txIn)',text:'Pulsa para elegir la carpeta'},
       uploading:{icon:'ti-cloud-upload',color:'var(--txIn)',text:it.detail||'Subiendo archivos nuevos…'},
       done:{icon:'ti-circle-check',color:'var(--txSu)',text:it.detail||'Sin novedades'},
       skipped:{icon:'ti-player-skip-forward',color:'var(--txWa)',text:'Omitida'},
       error:{icon:'ti-alert-triangle',color:'var(--txDa)',text:it.detail||'Error al comprobar'}
     }[it.status];
-    html+=`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:0.5px solid var(--bd);font-size:11.5px;">
+    const needsClick=it.status==='waiting_click';
+    html+=`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:0.5px solid var(--bd);font-size:11.5px;${needsClick?'background:var(--bgI);':''}">
       <i class="ti ${cfg.icon}" style="color:${cfg.color};font-size:15px;flex-shrink:0" aria-hidden="true"></i>
       <div style="flex:1;min-width:0;">
         <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.label}</div>
         <div style="color:var(--txT);font-size:10.5px;">${cfg.text}</div>
       </div>
+      ${needsClick?`<button class="tbtn pr" style="font-size:10.5px;padding:5px 8px;flex-shrink:0;" onclick="triggerRecheckPick(${idx})">Elegir</button>`:''}
+      ${needsClick?`<button class="tbtn" style="font-size:10.5px;padding:5px 8px;flex-shrink:0;" onclick="skipRecheckFolder(${idx})">Omitir</button>`:''}
     </div>`;
   });
   html+='</div>';
@@ -1969,8 +1973,14 @@ function closeWatchProgress(){
   const panel=document.getElementById('watch-progress');
   if(panel)panel.remove();
   S.watchProgressFolders=null;
+  S._recheckWatch=null;S._recheckQueue=null;
 }
 
+/* promptRecheck ya NO encadena automáticamente con confirm() — eso bloqueaba
+   el selector en móvil porque tras un confirm() el navegador deja de considerar
+   el siguiente .click() como gesto directo del usuario. Ahora cada carpeta
+   queda en estado "waiting_click" y el usuario pulsa el botón "Elegir" para
+   abrir el selector — eso sí cuenta como gesto válido siempre. */
 function promptRecheck(folders,idx){
   if(idx>=folders.length){
     localStorage.setItem('cs_watch_lastcheck',Date.now());
@@ -1980,16 +1990,30 @@ function promptRecheck(folders,idx){
     setTimeout(()=>{if(S.watchProgressFolders&&S.watchProgressFolders.every(i=>i.status==='done'||i.status==='skipped'||i.status==='error'))closeWatchProgress();},4000);
     return;
   }
-  const w=folders[idx];
-  if(S.watchProgressFolders&&S.watchProgressFolders[idx]){S.watchProgressFolders[idx].status='active';renderWatchProgress();}
-  if(!confirm('Selecciona de nuevo la carpeta "'+w.label+'" en el siguiente diálogo para comprobar si hay archivos nuevos.')){
-    if(S.watchProgressFolders&&S.watchProgressFolders[idx]){S.watchProgressFolders[idx].status='skipped';renderWatchProgress();}
-    promptRecheck(folders,idx+1); return;
+  if(S.watchProgressFolders&&S.watchProgressFolders[idx]){
+    S.watchProgressFolders[idx].status='waiting_click';
+    renderWatchProgress();
   }
+  // Espera aquí: no se hace nada más hasta que el usuario pulse "Elegir" o "Omitir"
+}
+
+function triggerRecheckPick(idx){
+  const folders=S.watchProgressFolders&&S._recheckQueueRef;
+  const queue=S._recheckQueueRef;
+  if(!queue||!queue[idx])return;
+  const w=queue[idx];
   S._recheckWatch=w;
-  S._recheckQueue=folders;
+  S._recheckQueue=queue;
   S._recheckIdx=idx;
   document.getElementById('fiwatch').click();
+}
+function skipRecheckFolder(idx){
+  if(S.watchProgressFolders&&S.watchProgressFolders[idx]){
+    S.watchProgressFolders[idx].status='skipped';
+    renderWatchProgress();
+  }
+  const queue=S._recheckQueueRef;
+  promptRecheck(queue,idx+1);
 }
 
 // Extiende el listener existente para soportar también el flujo de recomprobación
