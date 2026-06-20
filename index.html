@@ -355,6 +355,27 @@ button,input{font-family:var(--font);}
     </div>
   </div>
 
+  <!-- MODAL DUPLICATE FILES -->
+  <div class="mover" id="m-duplicates">
+    <div class="mbox" style="max-width:420px">
+      <h3><i class="ti ti-copy-warning" style="color:var(--txWa)" aria-hidden="true"></i> Archivos duplicados</h3>
+      <p style="font-size:12px;color:var(--txS);margin-bottom:14px;line-height:1.6;" id="dup-summary"></p>
+
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="tbtn" style="flex:1;justify-content:center;font-size:11px;padding:7px 6px;" onclick="applyDupChoiceToAll('keep')"><i class="ti ti-copy" aria-hidden="true"></i> Mantener ambos (todos)</button>
+        <button class="tbtn" style="flex:1;justify-content:center;font-size:11px;padding:7px 6px;" onclick="applyDupChoiceToAll('replace')"><i class="ti ti-replace" aria-hidden="true"></i> Reemplazar (todos)</button>
+        <button class="tbtn dan" style="flex:1;justify-content:center;font-size:11px;padding:7px 6px;" onclick="applyDupChoiceToAll('skip')"><i class="ti ti-x" aria-hidden="true"></i> Omitir (todos)</button>
+      </div>
+
+      <div id="dup-list" style="max-height:260px;overflow-y:auto;border:0.5px solid var(--bd);border-radius:var(--r);"></div>
+
+      <div class="mbtns" style="margin-top:16px;">
+        <button class="mca" onclick="cancelDuplicateResolution()">Cancelar subida</button>
+        <button class="mok" onclick="confirmDuplicateResolution()">Continuar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- SETUP -->
   <div id="setup-ov">
     <div class="sbox">
@@ -645,27 +666,94 @@ function cutSelected(){if(!S.sel.size)return;S.clip=[...S.sel];S.clipMode='cut';
 function pasteItems(){
   if(!S.clip||!S.clip.length)return;
   const dest=getNode(S.path);if(!dest||!dest.children)return;
-  S.clip.forEach(name=>{
+
+  // Detectar qué nombres del portapapeles ya existen en el destino
+  const conflicts=S.clip.filter(name=>!!dest.children[name]);
+
+  if(!conflicts.length){
+    doPasteItems(S.clip,S.path,S.clipMode);
+    return;
+  }
+
+  S.pasteDupContext={names:S.clip,destPath:S.path,mode:S.clipMode,conflicts:conflicts.map(name=>({name,choice:'keep'}))};
+  renderPasteDuplicateModal();
+  openM('m-duplicates');
+}
+
+function renderPasteDuplicateModal(){
+  const{conflicts,destPath}=S.pasteDupContext;
+  document.getElementById('dup-summary').textContent=
+    conflicts.length===1
+      ? 'Ya existe un elemento con este nombre en "'+(destPath==='/'?'Inicio':destPath)+'". ¿Qué quieres hacer?'
+      : `${conflicts.length} elemento(s) ya existen en "${destPath==='/'?'Inicio':destPath}". Elige qué hacer con cada uno, o aplica la misma acción a todos.`;
+  const list=document.getElementById('dup-list');
+  list.innerHTML=conflicts.map((c,i)=>{
+    const node=getNode(pjoin(destPath,c.name));
+    const isFolder=node&&node.type==='folder';
+    return `<div style="padding:10px 12px;border-bottom:0.5px solid var(--bd);">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
+        <i class="ti ${isFolder?'ti-folder':'ti-file'}" style="font-size:16px;color:${isFolder?'#faad14':'var(--txWa)'};flex-shrink:0" aria-hidden="true"></i>
+        <span style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${c.name}</span>
+      </div>
+      <div style="display:flex;gap:5px;margin-left:23px;">
+        <button class="tbtn${c.choice==='keep'?' pr':''}" style="flex:1;font-size:10.5px;padding:5px 4px;justify-content:center;" onclick="setPasteDupChoice(${i},'keep')"><i class="ti ti-copy" aria-hidden="true"></i> Mantener ambos</button>
+        <button class="tbtn${c.choice==='replace'?' pr':''}" style="flex:1;font-size:10.5px;padding:5px 4px;justify-content:center;" onclick="setPasteDupChoice(${i},'replace')"><i class="ti ti-replace" aria-hidden="true"></i> Reemplazar</button>
+        <button class="tbtn dan${c.choice==='skip'?' pr':''}" style="flex:1;font-size:10.5px;padding:5px 4px;justify-content:center;" onclick="setPasteDupChoice(${i},'skip')"><i class="ti ti-x" aria-hidden="true"></i> Omitir</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setPasteDupChoice(idx,choice){
+  S.pasteDupContext.conflicts[idx].choice=choice;
+  renderPasteDuplicateModal();
+}
+
+function cancelPasteDuplicateResolution(){
+  S.pasteDupContext=null;
+  closeM('m-duplicates');
+  flash('Operación cancelada');
+}
+
+function confirmPasteDuplicateResolution(){
+  const{names,destPath,mode,conflicts}=S.pasteDupContext;
+  const choiceByName=new Map(conflicts.map(c=>[c.name,c.choice]));
+  const finalNames=names.filter(name=>choiceByName.get(name)!=='skip');
+  const replaceSet=new Set(conflicts.filter(c=>c.choice==='replace').map(c=>c.name));
+
+  S.pasteDupContext=null;
+  closeM('m-duplicates');
+
+  if(!finalNames.length){flash('Nada que pegar (todo omitido)');return;}
+  doPasteItems(finalNames,destPath,mode,replaceSet);
+}
+
+function doPasteItems(names,destPath,mode,replaceSet){
+  const dest=getNode(destPath);if(!dest||!dest.children)return;
+  names.forEach(name=>{
     let srcParent=S.path;
-    if(S.clipMode==='cut'){srcParent=S.path;}
     const srcNode=getNode(pjoin(S.path,name));
-    if(!srcNode&&S.clipMode==='cut'){
+    let actualSrc=srcNode;
+    if(!actualSrc&&mode==='cut'){
       let found=null;
       const search=(path)=>{const n=getNode(path);if(!n||!n.children)return;if(n.children[name]){found=path;return;}Object.keys(n.children).forEach(k=>{if(n.children[k].type==='folder')search(pjoin(path,k));});};
       search('/');srcParent=found||S.path;
+      actualSrc=getNode(pjoin(srcParent,name));
     }
-    const actualSrc=getNode(pjoin(srcParent,name))||srcNode;
     if(!actualSrc)return;
+
     let newName=name;
-    if(dest.children[newName]&&S.clipMode==='copy'){
+    const willReplace=replaceSet&&replaceSet.has(name);
+    if(dest.children[newName]&&!willReplace){
+      // "mantener ambos" o copia normal sin conflicto explícito: auto-renombrar
       let i=2;const ext=name.includes('.')?'.'+name.split('.').pop():'';const base=ext?name.slice(0,name.length-ext.length):name;
       while(dest.children[base+' ('+i+')'+ext])i++;newName=base+' ('+i+')'+ext;
     }
     dest.children[newName]=JSON.parse(JSON.stringify(actualSrc));
     dest.children[newName].name=newName;
-    if(S.clipMode==='cut'){const srcPar=getNode(srcParent);if(srcPar&&srcPar.children)delete srcPar.children[name];}
+    if(mode==='cut'){const srcPar=getNode(srcParent);if(srcPar&&srcPar.children)delete srcPar.children[name];}
   });
-  if(S.clipMode==='cut'){S.clip=null;S.clipMode=null;S.cutIds.clear();}
+  if(mode==='cut'){S.clip=null;S.clipMode=null;S.cutIds.clear();}
   closeCtx();renderTree();renderFiles();updateTB();updateStatus();flash('✅ Pegado correctamente');
 }
 
@@ -815,8 +903,123 @@ function confirmUploadDest(){
   const files=S.pendingUploadFiles;
   const destPath=S.uploadDest||S.path;
   if(!files||!files.length){closeM('m-uploaddest');return;}
+  closeM('m-uploaddest');
+  startUploadWithDupCheck(files,destPath);
+}
+
+/* ===== DUPLICATE DETECTION ===== */
+function findDuplicates(files,destPath){
   const par=getNode(destPath);
-  if(!par||!par.children){closeM('m-uploaddest');return;}
+  if(!par||!par.children)return[];
+  return files.map(f=>{
+    const existing=par.children[f.name];
+    if(!existing||existing.type!=='file')return null;
+    return{file:f,existing,sameSize:existing.size===f.size,choice:'keep'};
+  }).filter(Boolean);
+}
+
+function startUploadWithDupCheck(files,destPath){
+  const dups=findDuplicates(files,destPath);
+  if(!dups.length){
+    doUploadFiles(files,destPath);
+    return;
+  }
+  S.dupContext={files,destPath,dups};
+  renderDuplicateModal();
+  openM('m-duplicates');
+}
+
+function renderDuplicateModal(){
+  const{dups}=S.dupContext;
+  document.getElementById('dup-summary').textContent=
+    dups.length===1
+      ? 'Ya existe un archivo con este nombre en el destino. ¿Qué quieres hacer?'
+      : `${dups.length} archivo(s) ya existen en el destino. Elige qué hacer con cada uno, o aplica la misma acción a todos.`;
+  const list=document.getElementById('dup-list');
+  list.innerHTML=dups.map((d,i)=>`
+    <div style="padding:10px 12px;border-bottom:0.5px solid var(--bd);" data-dup-idx="${i}">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">
+        <i class="ti ti-file" style="font-size:16px;color:var(--txWa);flex-shrink:0" aria-hidden="true"></i>
+        <span style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${d.file.name}</span>
+      </div>
+      <div style="font-size:10.5px;color:var(--txT);margin-bottom:7px;margin-left:23px;">
+        Nuevo: ${fmtSz(d.file.size)} ${d.sameSize?'· mismo tamaño que el existente':'· tamaño distinto al existente ('+fmtSz(d.existing.size)+')'}
+      </div>
+      <div style="display:flex;gap:5px;margin-left:23px;">
+        <button class="tbtn dup-choice-btn${d.choice==='keep'?' pr':''}" style="flex:1;font-size:10.5px;padding:5px 4px;justify-content:center;" onclick="setDupChoice(${i},'keep')"><i class="ti ti-copy" aria-hidden="true"></i> Mantener ambos</button>
+        <button class="tbtn dup-choice-btn${d.choice==='replace'?' pr':''}" style="flex:1;font-size:10.5px;padding:5px 4px;justify-content:center;" onclick="setDupChoice(${i},'replace')"><i class="ti ti-replace" aria-hidden="true"></i> Reemplazar</button>
+        <button class="tbtn dup-choice-btn${d.choice==='skip'?' pr':''}" style="flex:1;font-size:10.5px;padding:5px 4px;justify-content:center;" onclick="setDupChoice(${i},'skip')"><i class="ti ti-x" aria-hidden="true"></i> Omitir</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function setDupChoice(idx,choice){
+  S.dupContext.dups[idx].choice=choice;
+  renderDuplicateModal();
+}
+/* Router: aplica "elegir todos" al contexto que esté activo (subida o pegado) */
+function applyDupChoiceToAll(choice){
+  if(S.pasteDupContext){
+    S.pasteDupContext.conflicts.forEach(c=>c.choice=choice);
+    renderPasteDuplicateModal();
+    return;
+  }
+  if(S.dupContext){
+    S.dupContext.dups.forEach(d=>d.choice=choice);
+    renderDuplicateModal();
+  }
+}
+
+/* Router: cancelar según contexto activo */
+function cancelDuplicateResolution(){
+  if(S.pasteDupContext){cancelPasteDuplicateResolution();return;}
+  S.dupContext=null;
+  S.pendingUploadFiles=null;
+  closeM('m-duplicates');
+  flash('Subida cancelada');
+}
+
+/* Router: confirmar según contexto activo */
+function confirmDuplicateResolution(){
+  if(S.pasteDupContext){confirmPasteDuplicateResolution();return;}
+  const{files,destPath,dups}=S.dupContext;
+  const dupByName=new Map(dups.map(d=>[d.file.name,d.choice]));
+  const finalFiles=[];
+
+  files.forEach(f=>{
+    const choice=dupByName.get(f.name);
+    if(!choice){finalFiles.push(f);return;} // no era duplicado
+    if(choice==='skip')return; // se omite
+    if(choice==='replace'){finalFiles.push(f);return;} // se sube igual, sobreescribe por nombre
+    if(choice==='keep'){
+      // renombrar para no chocar: "nombre (2).ext"
+      const par=getNode(destPath);
+      let newName=f.name;
+      if(par&&par.children){
+        let i=2;
+        const ext=f.name.includes('.')?'.'+f.name.split('.').pop():'';
+        const base=ext?f.name.slice(0,f.name.length-ext.length):f.name;
+        while(par.children[newName])newName=base+' ('+i+')'+ext,i++;
+      }
+      const renamed=new File([f],newName,{type:f.type,lastModified:f.lastModified});
+      finalFiles.push(renamed);
+    }
+  });
+
+  S.dupContext=null;
+  closeM('m-duplicates');
+
+  if(finalFiles.length){
+    doUploadFiles(finalFiles,destPath);
+  }else{
+    flash('No se subió ningún archivo (todos omitidos)');
+  }
+}
+
+function doUploadFiles(files,destPath){
+  const par=getNode(destPath);
+  if(!par||!par.children){S.pendingUploadFiles=null;return;}
   files.forEach(f=>{
     const ftype=detectType(f.name,f.type);
     par.children[f.name]={type:'file',ftype,size:f.size,modified:new Date().toISOString().split('T')[0],sync:S.connected?'syncing':'pending',name:f.name};
@@ -825,7 +1028,6 @@ function confirmUploadDest(){
     else{const r=new FileReader();r.onload=ev=>{par.children[f.name].dataUrl=ev.target.result;};if(f.type.startsWith('image/')||f.type==='application/pdf')r.readAsDataURL(f);else r.readAsText(f);}
   });
   S.pendingUploadFiles=null;
-  closeM('m-uploaddest');
   if(destPath===S.path){renderFiles();}else{flash('⬆️ '+files.length+' archivo(s) subidos a '+(destPath==='/'?'Inicio':destPath));}
   renderTree();updateStatus();
 }
