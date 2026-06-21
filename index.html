@@ -252,6 +252,7 @@ button,input{font-family:var(--font);}
       <input type="text" id="search" placeholder="Buscar…" oninput="onSearch(this.value)">
     </div>
     <div class="tb-space"></div>
+    <button class="ibt" onclick="triggerManualSync()" title="Sincronizar ahora" id="manualsyncbtn"><i class="ti ti-refresh" id="manualsyncicon" aria-hidden="true"></i></button>
     <div class="sync-badge offline" id="sbadge" onclick="toggleSyncLog()">
       <i class="ti ti-wifi-off" id="sicon" aria-hidden="true"></i>
       <span id="slabel">Sin conexión</span>
@@ -1187,6 +1188,22 @@ async function wdavSync(path){
   S.syncing=false;
 }
 
+/* Sincronización manual: pulsable desde la topbar en cualquier momento.
+   Antes solo se sincronizaba al abrir la app o al conectar, así que las
+   carpetas/archivos creados directamente en Nextcloud nunca aparecían
+   hasta recargar la página entera. */
+async function triggerManualSync(){
+  if(!S.connected){
+    flash('⚠️ Conecta tu Nextcloud primero');
+    return;
+  }
+  const icon=document.getElementById('manualsyncicon');
+  if(icon)icon.classList.add('spin');
+  await wdavSync(S.config.path||'/');
+  if(icon)icon.classList.remove('spin');
+  flash('🔄 Sincronizado con el servidor');
+}
+
 function buildFSFromWebDAV(xml){
   const doc=new DOMParser().parseFromString(xml,'text/xml');
   const responses=[...doc.querySelectorAll('response')];
@@ -1197,7 +1214,14 @@ function buildFSFromWebDAV(xml){
     const rel=href.replace(userPath,'').replace(/^\/+/,'');
     if(!rel)return;
     const parts=rel.split('/').filter(Boolean);
-    const isDir=!!r.querySelector('collection')||href.endsWith('/');
+    // Detección robusta de carpeta: el namespace 'd:collection' a veces no es
+    // encontrado por querySelector con prefijo, así que comprobamos varias formas.
+    const resourceType=r.querySelector('resourcetype');
+    const isDir=
+      href.endsWith('/') ||
+      !!r.querySelector('collection') ||
+      (resourceType && resourceType.innerHTML && resourceType.innerHTML.toLowerCase().includes('collection')) ||
+      (resourceType && resourceType.getElementsByTagName && resourceType.getElementsByTagName('*').length>0 && [...resourceType.getElementsByTagName('*')].some(n=>n.localName==='collection'));
     const name=parts[parts.length-1];if(!name)return;
     const size=parseInt(r.querySelector('getcontentlength')?.textContent||'0');
     const mod=r.querySelector('getlastmodified')?.textContent||'';
@@ -1239,8 +1263,12 @@ function wdavUploadXHR(url,file,onProgress){
     xhr.setRequestHeader('Authorization','Basic '+wdavAuth());
     xhr.setRequestHeader('Content-Type',file.type||'application/octet-stream');
     xhr.upload.onprogress=e=>{ if(e.lengthComputable&&onProgress) onProgress(e.loaded,e.total); };
-    xhr.onload=()=>{ if(xhr.status>=200&&xhr.status<300) resolve(); else reject(new Error('HTTP '+xhr.status)); };
-    xhr.onerror=()=>reject(new Error('Error de red'));
+    xhr.onload=()=>{
+      if(xhr.status>=200&&xhr.status<300) resolve();
+      else reject(new Error('HTTP '+xhr.status+' al subir a '+url));
+    };
+    xhr.onerror=()=>reject(new Error('Error de red/CORS al subir a '+url+' (revisa que PUT esté permitido en la config CORS del servidor)'));
+    xhr.ontimeout=()=>reject(new Error('Tiempo de espera agotado subiendo a '+url));
     xhr.send(file);
   });
 }
@@ -2090,7 +2118,8 @@ _origFiwatchHandler.addEventListener('change',e=>{
         finishRecheckStep();
       });
     } else {
-      if(progressItem){progressItem.status='error';progressItem.detail='Carpeta destino no encontrada';renderWatchProgress();}
+      addLog('err','No se pudo subir a '+w.label,'La carpeta destino "'+(w.destPath==='/'?'Inicio':w.destPath)+'" no existe en tu copia local. Pulsa el botón ⟳ de la barra superior para sincronizar con el servidor y vuelve a intentarlo.');
+      if(progressItem){progressItem.status='error';progressItem.detail='Destino no sincronizado — pulsa ⟳ arriba primero';renderWatchProgress();}
       finishRecheckStep();
     }
   } else {
