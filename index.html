@@ -40,7 +40,19 @@ button,input{font-family:var(--font);}
 #app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;background:var(--bg1);position:relative;}
 
 /* TOPBAR */
-#topbar{display:flex;align-items:center;gap:8px;padding:0 12px;height:50px;border-bottom:0.5px solid var(--bd);background:var(--bg1);flex-shrink:0;padding-top:env(safe-area-inset-top);}
+#topbar{display:flex;align-items:center;gap:8px;padding:0 12px;height:50px;border-bottom:0.5px solid var(--bd);background:var(--bg1);flex-shrink:0;padding-top:env(safe-area-inset-top);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+#topbar::-webkit-scrollbar{display:none;}
+#topbar .ibt{flex-shrink:0;}
+@media(max-width:480px){
+  .search-wrap{max-width:34px;min-width:34px;flex:0 0 auto;transition:max-width .2s;}
+  .search-wrap input{position:absolute;left:0;top:0;width:0;opacity:0;pointer-events:none;transition:width .2s,opacity .2s;}
+  .search-wrap.expanded{max-width:160px;flex:1 1 auto;}
+  .search-wrap.expanded input{position:static;width:100%;opacity:1;pointer-events:auto;}
+  .search-wrap i{cursor:pointer;left:9px;}
+  .sync-badge span{display:none;}
+  .sync-badge{padding:6px;border-radius:50%;}
+  .logo span.logo-text{display:none;}
+}
 .logo{display:flex;align-items:center;gap:7px;font-weight:600;font-size:15px;}
 .logo i{font-size:21px;color:#0082c9;}
 .search-wrap{flex:1;max-width:300px;position:relative;}
@@ -246,10 +258,10 @@ button,input{font-family:var(--font);}
 
   <div id="topbar">
     <button class="ibt" id="mbtn" onclick="toggleTree()" aria-label="Menú"><i class="ti ti-menu-2"></i></button>
-    <div class="logo"><i class="ti ti-cloud" aria-hidden="true"></i> CloudSync</div>
-    <div class="search-wrap">
-      <i class="ti ti-search" aria-hidden="true"></i>
-      <input type="text" id="search" placeholder="Buscar…" oninput="onSearch(this.value)">
+    <div class="logo"><i class="ti ti-cloud" aria-hidden="true"></i> <span class="logo-text">CloudSync</span></div>
+    <div class="search-wrap" id="searchWrap">
+      <i class="ti ti-search" aria-hidden="true" onclick="toggleSearchExpand()"></i>
+      <input type="text" id="search" placeholder="Buscar…" oninput="onSearch(this.value)" onfocus="expandSearch()">
     </div>
     <div class="tb-space"></div>
     <button class="ibt" onclick="triggerManualSync()" title="Sincronizar ahora" id="manualsyncbtn"><i class="ti ti-refresh" id="manualsyncicon" aria-hidden="true"></i></button>
@@ -660,6 +672,21 @@ function renderFiles(){
   updateStatus();
 }
 function onSearch(v){S.search=v;renderFiles();}
+function expandSearch(){
+  const wrap=document.getElementById('searchWrap');
+  if(wrap)wrap.classList.add('expanded');
+}
+function toggleSearchExpand(){
+  const wrap=document.getElementById('searchWrap');
+  if(!wrap)return;
+  if(wrap.classList.contains('expanded')){
+    if(!document.getElementById('search').value){wrap.classList.remove('expanded');}
+    else document.getElementById('search').focus();
+  } else {
+    wrap.classList.add('expanded');
+    setTimeout(()=>document.getElementById('search').focus(),50);
+  }
+}
 function setView(v){S.view=v;renderFiles();}
 
 /* ===== SELECTION ===== */
