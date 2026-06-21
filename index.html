@@ -442,8 +442,14 @@ button,input{font-family:var(--font);}
         <h3 style="margin-bottom:0"><i class="ti ti-bolt" style="color:#0082c9" aria-hidden="true"></i> Subida automática</h3>
         <button class="ibt" onclick="closeM('m-autoupload')" title="Cerrar"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
-      <p style="font-size:12px;color:var(--txS);margin-bottom:16px;line-height:1.6;">
-        Vigila carpetas de tu dispositivo. Cada vez que abras CloudSync, comprobará si hay archivos nuevos y los subirá solos a la carpeta de Nextcloud que elijas.
+      <p style="font-size:12px;color:var(--txS);margin-bottom:10px;line-height:1.6;">
+        Vigila carpetas de tu dispositivo. Cada vez que pulses "Comprobar ahora", revisa si hay archivos nuevos y los sube solos a la carpeta de Nextcloud que elijas.
+      </p>
+      <p style="font-size:11px;background:var(--bgI);color:var(--txIn);padding:8px 10px;border-radius:var(--r);margin-bottom:16px;line-height:1.6;">
+        <i class="ti ti-info-circle" aria-hidden="true"></i>
+        ${FSA_SUPPORTED
+          ? 'En este navegador, comprobar una carpeta vigilada es de <b>un solo toque</b>, sin tener que volver a navegar y seleccionarla.'
+          : 'En Safari/iOS, el sistema obliga a volver a seleccionar la carpeta cada vez que se comprueba — es una restricción de Apple, no de la app.'}
       </p>
 
       <div id="watch-list" style="margin-bottom:14px;"></div>
@@ -1736,6 +1742,7 @@ function renderWatchList(){
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
         <i class="ti ti-folder" style="color:#faad14;font-size:18px;flex-shrink:0" aria-hidden="true"></i>
         <span style="font-size:13px;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${w.label}</span>
+        ${w.usesFSA&&FSA_SUPPORTED?'<span style="font-size:9.5px;background:var(--bgI);color:var(--txIn);padding:2px 6px;border-radius:8px;flex-shrink:0;font-weight:600;">⚡ 1 toque</span>':''}
         <label style="position:relative;display:inline-flex;align-items:center;cursor:pointer;flex-shrink:0;">
           <input type="checkbox" ${w.enabled?'checked':''} onchange="toggleWatchedFolder('${w.id}',this.checked)" style="width:32px;height:18px;accent-color:#0082c9;cursor:pointer;">
         </label>
@@ -1763,10 +1770,111 @@ function renderWatchStatus(){
   el.innerHTML=`${enabled} de ${S.watchedFolders.length} carpeta(s) activa(s).<br>${last?'Última comprobación: '+new Date(parseInt(last)).toLocaleString('es-ES'):'Aún no se ha comprobado.'}`;
 }
 
+/* ===== FILE SYSTEM ACCESS API (Chrome/Brave/Edge en Android y escritorio) =====
+   Esta API permite guardar un "handle" de la carpeta y volver a pedir permiso
+   con UN SOLO TOQUE, sin tener que navegar y reseleccionar la carpeta cada vez.
+   Safari/iOS no la soporta — ahí se sigue usando el selector clásico de siempre. */
+const FSA_SUPPORTED = typeof window.showDirectoryPicker === 'function';
+
+function openHandleDB(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open('cloudsync_handles',1);
+    req.onupgradeneeded=()=>{req.result.createObjectStore('handles');};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function saveHandle(watchId,handle){
+  const db=await openHandleDB();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('handles','readwrite');
+    tx.objectStore('handles').put(handle,watchId);
+    tx.oncomplete=()=>resolve();
+    tx.onerror=()=>reject(tx.error);
+  });
+}
+async function loadHandle(watchId){
+  const db=await openHandleDB();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('handles','readonly');
+    const req=tx.objectStore('handles').get(watchId);
+    req.onsuccess=()=>resolve(req.result||null);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function deleteHandle(watchId){
+  try{
+    const db=await openHandleDB();
+    const tx=db.transaction('handles','readwrite');
+    tx.objectStore('handles').delete(watchId);
+  }catch(e){}
+}
+
+/* Recorre recursivamente un directorio handle y devuelve File[] con
+   webkitRelativePath simulado, para que encaje con el resto del código
+   que ya espera ese formato (sea cual sea el origen del archivo). */
+async function readAllFilesFromHandle(dirHandle,baseName,relPath=''){
+  let results=[];
+  for await (const [name,handle] of dirHandle.entries()){
+    const currentRel=relPath?relPath+'/'+name:name;
+    if(handle.kind==='file'){
+      const file=await handle.getFile();
+      // Simulamos webkitRelativePath para reutilizar toda la lógica existente
+      Object.defineProperty(file,'webkitRelativePath',{value:baseName+'/'+currentRel,configurable:true});
+      results.push(file);
+    } else if(handle.kind==='directory'){
+      const sub=await readAllFilesFromHandle(handle,baseName,currentRel);
+      results=results.concat(sub);
+    }
+  }
+  return results;
+}
+
+/* Pide permiso de re-lectura sobre un handle guardado. Si el permiso ya está
+   concedido, esto no muestra ningún diálogo — es instantáneo. Si hace falta
+   reconfirmar (el navegador lo pide de vez en cuando por seguridad), muestra
+   un permiso nativo de un toque, nunca el selector completo de carpetas. */
+async function ensureHandlePermission(handle){
+  const opts={mode:'read'};
+  if((await handle.queryPermission(opts))==='granted')return true;
+  if((await handle.requestPermission(opts))==='granted')return true;
+  return false;
+}
+
 function addWatchedFolder(){
   S.watchPendingId='new';
-  document.getElementById('fiwatch').click();
+  if(FSA_SUPPORTED){
+    addWatchedFolderFSA();
+  } else {
+    document.getElementById('fiwatch').click();
+  }
 }
+
+async function addWatchedFolderFSA(){
+  try{
+    const dirHandle=await window.showDirectoryPicker({mode:'read'});
+    const folderLabel=dirHandle.name||'Carpeta';
+    flash('Leyendo contenido de "'+folderLabel+'"…');
+    const files=await readAllFilesFromHandle(dirHandle,folderLabel);
+    const knownFiles=files.map(f=>({name:f.webkitRelativePath||f.name,size:f.size,modified:f.lastModified}));
+    const watchId='w'+Date.now();
+    const newWatch={
+      id:watchId,
+      label:folderLabel,
+      destPath:S.path,
+      fileTypes:'all',
+      network:'any',
+      enabled:true,
+      usesFSA:true, // marca que esta carpeta usa el modo de un solo toque
+      knownFiles
+    };
+    await saveHandle(watchId,dirHandle);
+    openWatchConfigModal(newWatch,true);
+  }catch(e){
+    if(e.name!=='AbortError') flash('No se pudo acceder a la carpeta: '+e.message);
+  }
+}
+
 function editWatchedFolder(id){
   const w=S.watchedFolders.find(x=>x.id===id);
   if(!w)return;
@@ -1776,6 +1884,7 @@ function removeWatchedFolder(id){
   if(!confirm('¿Quitar esta carpeta vigilada? No se borrará nada de Nextcloud.'))return;
   S.watchedFolders=S.watchedFolders.filter(x=>x.id!==id);
   saveWatchedFolders();renderWatchList();
+  deleteHandle(id);
 }
 function toggleWatchedFolder(id,enabled){
   const w=S.watchedFolders.find(x=>x.id===id);
@@ -1975,9 +2084,11 @@ function renderWatchProgress(){
     <button class="ibt" onclick="closeWatchProgress()" style="font-size:14px;padding:2px"><i class="ti ti-x" aria-hidden="true"></i></button>
   </div><div style="max-height:280px;overflow-y:auto;">`;
   items.forEach((it,idx)=>{
+    const w=S._recheckQueueRef&&S._recheckQueueRef[idx];
+    const isFSA=w&&w.usesFSA&&FSA_SUPPORTED;
     const cfg={
       pending:{icon:'ti-clock',color:'var(--txT)',text:'En espera…'},
-      waiting_click:{icon:'ti-hand-click',color:'var(--txIn)',text:'Pulsa para elegir la carpeta'},
+      waiting_click:{icon:isFSA?'ti-bolt':'ti-hand-click',color:'var(--txIn)',text:isFSA?'Pulsa para comprobar (1 toque)':'Pulsa para elegir la carpeta'},
       uploading:{icon:'ti-cloud-upload',color:'var(--txIn)',text:it.detail||'Subiendo archivos nuevos…'},
       done:{icon:'ti-circle-check',color:'var(--txSu)',text:it.detail||'Sin novedades'},
       skipped:{icon:'ti-player-skip-forward',color:'var(--txWa)',text:'Omitida'},
@@ -1990,7 +2101,7 @@ function renderWatchProgress(){
         <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.label}</div>
         <div style="color:var(--txT);font-size:10.5px;">${cfg.text}</div>
       </div>
-      ${needsClick?`<button class="tbtn pr" style="font-size:10.5px;padding:5px 8px;flex-shrink:0;" onclick="triggerRecheckPick(${idx})">Elegir</button>`:''}
+      ${needsClick?`<button class="tbtn pr" style="font-size:10.5px;padding:5px 8px;flex-shrink:0;" onclick="triggerRecheckPick(${idx})">${isFSA?'Comprobar':'Elegir'}</button>`:''}
       ${needsClick?`<button class="tbtn" style="font-size:10.5px;padding:5px 8px;flex-shrink:0;" onclick="skipRecheckFolder(${idx})">Omitir</button>`:''}
     </div>`;
   });
@@ -2026,15 +2137,55 @@ function promptRecheck(folders,idx){
 }
 
 function triggerRecheckPick(idx){
-  const folders=S.watchProgressFolders&&S._recheckQueueRef;
   const queue=S._recheckQueueRef;
   if(!queue||!queue[idx])return;
   const w=queue[idx];
+
+  if(w.usesFSA && FSA_SUPPORTED){
+    triggerRecheckPickFSA(w,idx,queue);
+    return;
+  }
+
+  // Camino clásico (Safari/iOS, o carpetas añadidas antes de tener FSA disponible):
+  // requiere volver a navegar y seleccionar la carpeta cada vez.
   S._recheckWatch=w;
   S._recheckQueue=queue;
   S._recheckIdx=idx;
   document.getElementById('fiwatch').click();
 }
+
+/* Camino de un solo toque: usa el handle guardado en IndexedDB. Si el permiso
+   sigue concedido (lo normal), no aparece ningún diálogo de selección — lee
+   directamente. Si el navegador pide reconfirmar, es un permiso nativo de un
+   toque, nunca el explorador completo de carpetas. */
+async function triggerRecheckPickFSA(w,idx,queue){
+  const progressItem=S.watchProgressFolders&&S.watchProgressFolders[idx];
+  try{
+    const handle=await loadHandle(w.id);
+    if(!handle){
+      addLog('warn','No se encontró el acceso guardado a "'+w.label+'"','Vuelve a añadir esta carpeta vigilada');
+      if(progressItem){progressItem.status='error';progressItem.detail='Acceso perdido — vuelve a añadirla';renderWatchProgress();}
+      promptRecheck(queue,idx+1);
+      return;
+    }
+    const granted=await ensureHandlePermission(handle);
+    if(!granted){
+      if(progressItem){progressItem.status='skipped';progressItem.detail='Permiso denegado';renderWatchProgress();}
+      promptRecheck(queue,idx+1);
+      return;
+    }
+    if(progressItem){progressItem.status='uploading';progressItem.detail='Leyendo carpeta…';renderWatchProgress();}
+    const files=await readAllFilesFromHandle(handle,w.label);
+    processNewFilesForWatch(w,idx,files,()=>{
+      promptRecheck(queue,idx+1);
+    });
+  }catch(e){
+    addLog('err','Error leyendo "'+w.label+'"',e.message);
+    if(progressItem){progressItem.status='error';progressItem.detail=e.message;renderWatchProgress();}
+    promptRecheck(queue,idx+1);
+  }
+}
+
 function skipRecheckFolder(idx){
   if(S.watchProgressFolders&&S.watchProgressFolders[idx]){
     S.watchProgressFolders[idx].status='skipped';
@@ -2046,11 +2197,11 @@ function skipRecheckFolder(idx){
 
 // Extiende el listener existente para soportar también el flujo de recomprobación
 const _origFiwatchHandler=document.getElementById('fiwatch');
-_origFiwatchHandler.addEventListener('change',e=>{
-  if(!S._recheckWatch)return; // el otro listener ya gestiona el caso "nueva carpeta"
-  const files=[...e.target.files];
-  const w=S._recheckWatch;
-  const idx=S._recheckIdx;
+/* Lógica compartida: dado un conjunto de archivos (vengan de <input webkitdirectory>
+   o de la File System Access API), detecta los nuevos, recrea subcarpetas y sube.
+   onDone(success) se llama siempre al terminar, para que cada flujo de llamada
+   decida cómo continuar (avanzar a la siguiente carpeta, etc). */
+function processNewFilesForWatch(w,idx,files,onDone){
   const knownSet=new Set(w.knownFiles.map(k=>k.name+'|'+k.size));
   const newFiles=files.filter(f=>{
     const key=(f.webkitRelativePath||f.name)+'|'+f.size;
@@ -2059,18 +2210,22 @@ _origFiwatchHandler.addEventListener('change',e=>{
 
   const progressItem=S.watchProgressFolders&&S.watchProgressFolders[idx];
 
+  const finalizeFingerprint=()=>{
+    w.knownFiles=files.map(f=>({name:f.webkitRelativePath||f.name,size:f.size,modified:f.lastModified}));
+    saveWatchedFolders();
+  };
+
   if(w.network==='wifi'&&!isOnWifi()){
     addLog('warn','Subida pospuesta: '+w.label,'Esperando conexión Wifi');
     if(progressItem){progressItem.status='skipped';progressItem.detail='Esperando Wifi';renderWatchProgress();}
-    finishRecheckStep();
+    finalizeFingerprint();
+    onDone(true);
   }else if(newFiles.length){
     addLog('info','Detectados '+newFiles.length+' archivo(s) nuevos en '+w.label,'');
     if(progressItem){progressItem.status='uploading';progressItem.detail='Subiendo 0 de '+newFiles.length+'…';renderWatchProgress();}
     const destRoot=getNode(w.destPath);
     if(destRoot&&destRoot.children){
-      // Para cada archivo nuevo, recrea su ruta de subcarpetas relativa dentro de w.destPath,
-      // igual que hace "Subir carpeta" — así no todo cae plano en la carpeta raíz del destino.
-      const folderCreationCache=new Set(); // evita crear la misma subcarpeta varias veces en este lote
+      const folderCreationCache=new Set();
       const uploadTargets=newFiles.map(f=>{
         const relPath=f.webkitRelativePath||f.name;
         const parts=relPath.split('/').filter(Boolean);
@@ -2095,7 +2250,6 @@ _origFiwatchHandler.addEventListener('change',e=>{
       });
       renderTree();renderFiles();
 
-      // Esperar de verdad a que todas las subidas terminen (éxito o fallo) antes de marcar como hecho
       let succeeded=0,failed=0,completed=0;
       const uploadPromises=uploadTargets.map(({file,uploadPath})=>
         wdavUploadAt(uploadPath,file)
@@ -2115,31 +2269,34 @@ _origFiwatchHandler.addEventListener('change',e=>{
           renderWatchProgress();
         }
         renderFiles();renderTree();
-        finishRecheckStep();
+        finalizeFingerprint();
+        onDone(failed===0);
       });
     } else {
       addLog('err','No se pudo subir a '+w.label,'La carpeta destino "'+(w.destPath==='/'?'Inicio':w.destPath)+'" no existe en tu copia local. Pulsa el botón ⟳ de la barra superior para sincronizar con el servidor y vuelve a intentarlo.');
       if(progressItem){progressItem.status='error';progressItem.detail='Destino no sincronizado — pulsa ⟳ arriba primero';renderWatchProgress();}
-      finishRecheckStep();
+      finalizeFingerprint();
+      onDone(false);
     }
   } else {
     addLog('info','Sin novedades en '+w.label,'');
     if(progressItem){progressItem.status='done';progressItem.detail='Sin archivos nuevos';renderWatchProgress();}
-    finishRecheckStep();
+    finalizeFingerprint();
+    onDone(true);
   }
+}
 
-  // Actualiza la huella con TODOS los archivos vistos ahora (esto sí puede hacerse ya)
-  w.knownFiles=files.map(f=>({name:f.webkitRelativePath||f.name,size:f.size,modified:f.lastModified}));
-  saveWatchedFolders();
+_origFiwatchHandler.addEventListener('change',e=>{
+  if(!S._recheckWatch)return; // el otro listener ya gestiona el caso "nueva carpeta"
+  const files=[...e.target.files];
+  const w=S._recheckWatch;
+  const idx=S._recheckIdx;
   e.target.value='';
-
-  // finishRecheckStep se llama SOLO cuando el trabajo real (si lo hay) ha terminado de verdad,
-  // nunca antes — así no se avanza a la siguiente carpeta mientras aún se está subiendo.
-  function finishRecheckStep(){
+  processNewFilesForWatch(w,idx,files,()=>{
     const queue=S._recheckQueue;
     S._recheckWatch=null;
     if(queue) promptRecheck(queue,idx+1);
-  }
+  });
 });
 
 /* Comprobación automática silenciosa al abrir la app (best-effort, sin re-pedir carpeta) */
